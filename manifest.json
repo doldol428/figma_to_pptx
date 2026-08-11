@@ -1,0 +1,13 @@
+{
+  "name": "Figma → PPTX (실측 크기 유지)",
+  "id": "figma-to-pptx-truesize",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["none"],
+    "reasoning": "모든 변환은 로컬에서 수행되며 외부 통신이 없습니다."
+  }
+}

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 12px;
+    font: 11px/1.5 Inter, "Pretendard", "Malgun Gothic", -apple-system, sans-serif;
+    background: var(--figma-color-bg, #fff);
+    color: var(--figma-color-text, #000);
+  }
+  h1 { font-size: 11px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .card {
+    border: 1px solid var(--figma-color-border, #e5e5e5);
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .size {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .size small { font-size: 11px; font-weight: 400; opacity: .7; }
+  .sub { color: var(--figma-color-text-secondary, #666); margin-top: 2px; }
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--figma-color-bg-brand-tertiary, #e5f0ff);
+    color: var(--figma-color-text-brand, #0d63f3);
+    font-weight: 600;
+    margin-left: 4px;
+  }
+  .blocked {
+    background: var(--figma-color-bg-danger-tertiary, #ffe8e5);
+    color: var(--figma-color-text-danger, #b3261e);
+    border-radius: 6px;
+    padding: 10px;
+    white-space: pre-wrap;
+    margin-bottom: 10px;
+  }
+  button {
+    width: 100%;
+    height: 32px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--figma-color-bg-brand, #0d99ff);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { background: var(--figma-color-bg-disabled, #e5e5e5); color: var(--figma-color-text-disabled, #b3b3b3); cursor: not-allowed; }
+  label.row { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--figma-color-text-secondary, #666); }
+  label.row select { margin-left: auto; font: inherit; }
+  #warnings { max-height: 180px; overflow-y: auto; }
+  #warnings ul { margin: 6px 0 0; padding-left: 16px; }
+  #warnings li { margin-bottom: 4px; color: var(--figma-color-text-secondary, #666); }
+  #warnings b { color: var(--figma-color-text, #000); font-weight: 600; }
+  .muted { color: var(--figma-color-text-tertiary, #999); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>슬라이드 크기</h1>
+    <div class="size" id="size">—</div>
+    <div class="sub" id="detail">프레임을 선택하세요</div>
+  </div>
+
+  <div class="blocked hidden" id="blocked"></div>
+
+  <label class="row">
+    이미지 렌더 배율
+    <select id="scale">
+      <option value="1">1x</option>
+      <option value="2" selected>2x</option>
+      <option value="3">3x</option>
+      <option value="4">4x</option>
+    </select>
+  </label>
+
+  <p class="muted" style="margin:8px 0 10px">
+    Figma 1px = 1pt(72dpi) 로 환산합니다. 프레임 크기가 그대로 슬라이드 크기가 되며 비율은 손대지 않습니다.
+  </p>
+
+  <button id="export" disabled>PPTX 내보내기</button>
+
+  <div class="card hidden" id="warnings" style="margin-top:10px"></div>
+
+  <script>__SCRIPT__</script>
+</body>
+</html>

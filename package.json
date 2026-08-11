@@ -1,0 +1,29 @@
+{
+  "name": "figma-to-pptx",
+  "version": "0.1.0",
+  "description": "Figma 프레임을 원본 물리 크기 그대로 PPTX 로 내보내는 플러그인 (1px = 1pt, 네이티브 도형 변환)",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "verify": "esbuild tools/verify.ts --bundle --platform=node --format=esm --outfile=dist/verify.mjs --external:jszip --external:pptxgenjs --log-level=warning && node dist/verify.mjs",
+    "check": "npm run typecheck && npm run build && npm run verify"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/doldol428/figma_to_pptx.git"
+  },
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.133.0",
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
+    "jszip": "^3.10.1",
+    "typescript": "^7.0.2"
+  }
+}
