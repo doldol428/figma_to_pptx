@@ -12,10 +12,10 @@ const elExport = $<HTMLButtonElement>('export');
 const elWarnings = $('warnings');
 
 const DPI_OPTIONS: DropdownOption[] = [
-  { value: 96, label: '이미지 해상도 96 DPI', rowLabel: '96 DPI', note: '화면' },
-  { value: 150, label: '이미지 해상도 150 DPI', rowLabel: '150 DPI' },
-  { value: 220, label: '이미지 해상도 220 DPI', rowLabel: '220 DPI', note: '기본' },
-  { value: 300, label: '이미지 해상도 300 DPI', rowLabel: '300 DPI', note: '인쇄' },
+  { value: 96, label: '96 DPI', note: '화면' },
+  { value: 150, label: '150 DPI' },
+  { value: 220, label: '220 DPI', note: '기본' },
+  { value: 300, label: '300 DPI', note: '인쇄' },
 ];
 
 let busy = false;

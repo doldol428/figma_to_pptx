@@ -10,11 +10,9 @@
 
 export interface DropdownOption {
   value: number;
-  /** 닫혀 있을 때 트리거에 보이는 문구 */
+  /** 트리거와 목록 행에 공통으로 쓰이는 값 문구 */
   label: string;
-  /** 목록 행 문구 (없으면 label) */
-  rowLabel?: string;
-  /** 행 오른쪽 보조 문구 */
+  /** 행 오른쪽에만 보이는 보조 문구 */
   note?: string;
 }
 
@@ -66,7 +64,7 @@ export class Dropdown {
     this.menu.innerHTML = this.options
       .map((o, i) => {
         const note = o.note ? `<span class="opt-note">${o.note}</span>` : '';
-        return `<div class="opt" role="option" id="${this.menu.id}-${i}">${o.rowLabel ?? o.label}${note}</div>`;
+        return `<div class="opt" role="option" id="${this.menu.id}-${i}">${o.label}${note}</div>`;
       })
       .join('');
 
