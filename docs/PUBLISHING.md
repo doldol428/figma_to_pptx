@@ -201,6 +201,38 @@ Figma 1px = 1pt (72dpi). A4 프레임(595.28 × 841.89 px)은 정확히 210 × 2
 소스: https://github.com/doldol428/figma_to_pptx
 ```
 
+### Data security 설문 (3단계)
+
+선택 항목이지만 채우는 편이 낫다. 우리 답은 전 항목이 최상이고, 채워야 Community 페이지에
+Data security 섹션이 붙는다. 기업 관리자가 플러그인을 정책으로 거를 때 이 선언 유무를 본다.
+
+`src/` 전체에 저장 API 도 네트워크 호출도 없다는 것을 확인하고 답한 값이다.
+코드가 바뀌면 이 답도 다시 검증해야 한다.
+
+```
+grep -E "clientStorage|setPluginData|localStorage|fetch\(|XMLHttpRequest|https?://" src -r
+```
+
+| 문항 | 답 |
+|---|---|
+| 1. 백엔드 서비스를 운영하는가 | **No** — 서버가 없다 |
+| 2. 외부 네트워크 요청을 하는가 | **does not make any network requests** 하나만 |
+| 3. 사용자 인증을 쓰는가 | **No** |
+| 4. Figma API 데이터를 저장하는가 | **No** 하나만 |
+| 5. 업데이트 관리 방식 | 실제 상황대로 (혼자면 solo developer) |
+
+2번 근거: `networkAccess` 가 `["none"]` 이고 Figma 가 이를 강제한다. pptxgenjs 는 번들에
+포함돼 CDN 을 타지 않고, 폰트는 로컬 패밀리 참조뿐이라 `@font-face` 가 없다. 이미지는 전부
+`data:` URI 로 넘긴다 — pptxgenjs 가 네트워크를 쓰는 건 `path:` 로 URL 을 줄 때뿐인데
+그 경로를 쓰지 않는다. 다운로드는 `URL.createObjectURL` 로 만든 로컬 blob 이다.
+
+4번 근거: 이 문항은 플러그인이 데이터를 **붙들고 있는지**를 묻는다 (보기가 전부 localStorage,
+clientStorage, setPluginData 같은 영속 저장이다). 만들어진 pptx 는 사용자가 요청한 결과물이고
+브라우저 다운로드로 넘어간 뒤 플러그인은 아무것도 보관하지 않는다.
+
+**이 선언은 공개 약속이다.** 나중에 네트워크를 쓰는 기능이 생기면 반드시 갱신해야 한다.
+계획 중인 DOCX·HWPX 는 로컬 변환이라 충돌하지 않는다.
+
 ### 태그
 
 이름에 포맷 키워드가 없으므로 검색 노출은 태그와 설명이 담당한다.
