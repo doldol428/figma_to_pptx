@@ -118,6 +118,33 @@ export function resolveFill(
   return { kind: 'fill', fill: { kind: 'none' } };
 }
 
+export interface SideWeights {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/**
+ * 변마다 두께가 다르면 네 변의 값을, 균일하면 null 을 돌려준다.
+ *
+ * Figma 는 변별 두께가 설정되면 `strokeWeight` 로 `figma.mixed` 를 준다.
+ * 표는 보통 행 프레임에 아래쪽 선만 주는 식으로 만들기 때문에 이 경우가 흔하다.
+ * 균일한 값으로 뭉개면 없던 격자가 생기고 두께도 틀어진다.
+ */
+export function perSideWeights(node: SceneNode): SideWeights | null {
+  if (!('strokeWeight' in node)) return null;
+  const n = node as SceneNode & MinimalStrokesMixin & Partial<IndividualStrokesMixin>;
+  if (typeof n.strokeWeight === 'number') return null;
+  if (typeof n.strokeTopWeight !== 'number') return null;
+  return {
+    top: n.strokeTopWeight,
+    right: n.strokeRightWeight ?? 0,
+    bottom: n.strokeBottomWeight ?? 0,
+    left: n.strokeLeftWeight ?? 0,
+  };
+}
+
 export function resolveStroke(
   node: SceneNode & MinimalStrokesMixin,
   nodeOpacity: number,
@@ -125,7 +152,14 @@ export function resolveStroke(
   const paint = topVisiblePaint(node.strokes);
   if (!paint) return undefined;
 
-  const weight = typeof node.strokeWeight === 'number' ? node.strokeWeight : 1;
+  // 변별 두께면 대표값으로 가장 두꺼운 변을 쓴다. 실제 그릴 때는 변마다 제 값으로 덮어쓴다.
+  let weight: number;
+  if (typeof node.strokeWeight === 'number') {
+    weight = node.strokeWeight;
+  } else {
+    const sides = perSideWeights(node);
+    weight = sides ? Math.max(sides.top, sides.right, sides.bottom, sides.left) : 1;
+  }
   if (weight <= 0) return undefined;
 
   let color: Hex;

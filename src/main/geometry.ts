@@ -42,6 +42,14 @@ export function invert(m: Mat): Mat {
   ];
 }
 
+/**
+ * 노드 로컬 공간에서 (dx, dy) 만큼 옮긴 하위 사각형의 변환행렬.
+ * 변별 테두리처럼 노드 안의 특정 위치에 도형을 놓을 때 쓴다.
+ */
+export function translated(m: Mat, dx: number, dy: number): Mat {
+  return mul(m, [[1, 0, dx], [0, 1, dy]]);
+}
+
 /** 프레임 로컬 공간 기준의 노드 변환행렬 */
 export function relativeTo(frame: SceneNode, node: SceneNode): Mat {
   return mul(invert(toMat(frame.absoluteTransform)), toMat(node.absoluteTransform));
