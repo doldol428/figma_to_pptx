@@ -58,29 +58,83 @@
     font-weight: 600;
     cursor: pointer;
   }
-  select.control {
-    appearance: none;
-    -webkit-appearance: none;
-    border: 1px solid var(--figma-color-border, #e5e5e5);
-    background-color: transparent;
-    color: var(--figma-color-text, #000);
-    /* 네이티브 화살표를 끄고 테마를 따라가는 커스텀 화살표를 넣는다 */
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 10px center;
-    padding-right: 26px;
-    margin-bottom: 6px;
-  }
-  select.control:hover { border-color: var(--figma-color-border-selected, #0d99ff); }
-  button.control {
+  .primary {
     border: 1px solid transparent;
     background: var(--figma-color-bg-brand, #0d99ff);
     color: #fff;
   }
-  button.control:disabled {
+  .primary:disabled {
     background: var(--figma-color-bg-disabled, #e5e5e5);
     color: var(--figma-color-text-disabled, #b3b3b3);
     cursor: not-allowed;
+  }
+  .secondary {
+    border: 1px solid var(--figma-color-border, #e5e5e5);
+    background: transparent;
+    color: var(--figma-color-text, #000);
+  }
+  .secondary:hover:not(:disabled) { border-color: var(--figma-color-border-selected, #0d99ff); }
+  .secondary:disabled { color: var(--figma-color-text-disabled, #b3b3b3); cursor: not-allowed; }
+
+  /*
+   * 커스텀 드롭다운.
+   * 네이티브 select 의 팝업 목록은 OS 가 그려서 CSS 가 닿지 않는다 — 모서리도 각지고
+   * 테마도 따로 논다. 그래서 트리거 버튼 + 절대배치 목록으로 직접 만든다.
+   */
+  .select { position: relative; margin-bottom: 6px; }
+  .select-trigger { text-align: left; padding-right: 26px; }
+  .select-trigger::after {
+    content: '';
+    position: absolute;
+    right: 11px;
+    top: 50%;
+    margin-top: -2px;
+    border: 4px solid transparent;
+    /* currentColor 라서 라이트/다크 어느 쪽에서도 본문 색을 따라간다 */
+    border-top-color: currentColor;
+    opacity: .5;
+  }
+  .select-menu {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 10;
+    padding: 4px;
+    border: 1px solid var(--figma-color-border, #e5e5e5);
+    border-radius: 6px;
+    background: var(--figma-color-bg, #fff);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .16), 0 1px 3px rgba(0, 0, 0, .08);
+  }
+  .opt {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 8px 0 22px;
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .opt.active { background: var(--figma-color-bg-hover, #f0f0f0); }
+  .opt[aria-selected="true"] { font-weight: 600; }
+  .opt[aria-selected="true"]::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 4px;
+    height: 8px;
+    margin-top: -6px;
+    border: solid var(--figma-color-text-brand, #0d63f3);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+  .opt-note {
+    margin-left: auto;
+    padding-left: 10px;
+    font-weight: 400;
+    color: var(--figma-color-text-tertiary, #999);
   }
 
   #warnings { max-height: 200px; overflow-y: auto; margin: 8px 0 0; }
@@ -100,14 +154,13 @@
 
   <div class="blocked hidden" id="blocked"></div>
 
-  <select class="control" id="dpi">
-    <option value="96">이미지 해상도 96 DPI</option>
-    <option value="150">이미지 해상도 150 DPI</option>
-    <option value="220" selected>이미지 해상도 220 DPI</option>
-    <option value="300">이미지 해상도 300 DPI</option>
-  </select>
+  <div class="select" id="dpiSelect">
+    <button type="button" class="control secondary select-trigger" id="dpiTrigger"
+            aria-haspopup="listbox" aria-expanded="false"></button>
+    <div class="select-menu hidden" id="dpiMenu" role="listbox" aria-label="이미지 해상도"></div>
+  </div>
 
-  <button class="control" id="export" disabled>PPTX 내보내기</button>
+  <button type="button" class="control primary" id="export" disabled>PPTX 내보내기</button>
 
   <div class="card hidden" id="warnings"></div>
 

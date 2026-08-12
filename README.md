@@ -167,7 +167,8 @@ src/
     path.ts       SVG path → custGeom 점 (S/T 전개, A → 베지어 근사)
   ui/             iframe 스레드
     ui.html       UI 템플릿 (빌드 시 스크립트 인라인)
-    ui.ts         상태 표시 / 다운로드
+    ui.ts         상태 표시 / 다운로드 / 창 높이 동기화
+    dropdown.ts   커스텀 드롭다운 (네이티브 select 팝업은 OS 가 그려서 스타일이 안 먹는다)
     build.ts      IR → PptxGenJS. Scale 클래스가 px → inch 변환의 유일한 지점
 tools/
   verify.ts       A4 실측 + 1920×1080 → 16:9 회귀 검증

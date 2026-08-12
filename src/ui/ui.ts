@@ -1,6 +1,7 @@
 import type { Doc, MainToUi, SelectionState, UiToMain } from '../shared/ir';
 import { ptToMm } from '../shared/units';
 import { buildPptx } from './build';
+import { Dropdown, type DropdownOption } from './dropdown';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -8,8 +9,14 @@ const elSize = $('size');
 const elDetail = $('detail');
 const elBlocked = $('blocked');
 const elExport = $<HTMLButtonElement>('export');
-const elDpi = $<HTMLSelectElement>('dpi');
 const elWarnings = $('warnings');
+
+const DPI_OPTIONS: DropdownOption[] = [
+  { value: 96, label: '이미지 해상도 96 DPI', rowLabel: '96 DPI', note: '화면' },
+  { value: 150, label: '이미지 해상도 150 DPI', rowLabel: '150 DPI' },
+  { value: 220, label: '이미지 해상도 220 DPI', rowLabel: '220 DPI', note: '기본' },
+  { value: 300, label: '이미지 해상도 300 DPI', rowLabel: '300 DPI', note: '인쇄' },
+];
 
 let busy = false;
 let state: SelectionState | null = null;
@@ -81,10 +88,27 @@ function download(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-/** 경고 목록이 붙고 빠질 때마다 필요한 높이가 달라지므로 창을 내용에 맞춘다. */
+/**
+ * 창 높이를 내용에 맞춘다.
+ * 드롭다운 목록은 absolute 라 body 높이에 안 잡히므로 따로 더해줘야 잘리지 않는다.
+ */
 function syncHeight(): void {
-  toMain({ type: 'resize', height: document.body.getBoundingClientRect().height });
+  const body = document.body.getBoundingClientRect().height;
+  const menuBottom = dpi?.menuBottom();
+  const height = menuBottom === null || menuBottom === undefined
+    ? body
+    : Math.max(body, menuBottom + 12);
+  toMain({ type: 'resize', height });
 }
+
+const dpi = new Dropdown(
+  $('dpiSelect'),
+  $<HTMLButtonElement>('dpiTrigger'),
+  $('dpiMenu'),
+  DPI_OPTIONS,
+  220,
+  syncHeight,
+);
 
 new ResizeObserver(syncHeight).observe(document.body);
 
@@ -92,14 +116,16 @@ elExport.addEventListener('click', () => {
   if (busy || !state?.ok) return;
   busy = true;
   elExport.disabled = true;
+  dpi.setDisabled(true);
   elExport.textContent = '읽는 중…';
   elWarnings.classList.add('hidden');
-  toMain({ type: 'export', imageDpi: Number(elDpi.value) });
+  toMain({ type: 'export', imageDpi: dpi.value });
 });
 
 function finish(): void {
   busy = false;
   elExport.disabled = !state?.ok;
+  dpi.setDisabled(false);
   elExport.textContent = 'PPTX 내보내기';
 }
 
