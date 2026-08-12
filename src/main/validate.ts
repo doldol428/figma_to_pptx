@@ -1,6 +1,6 @@
 import type { SelectionState, SizeInfo } from '../shared/ir';
-import { defaultPresetId, exactStandardName, presetOptions } from '../shared/presets';
-import { detectPaper, pxToMm } from '../shared/units';
+import { resolveSlide } from '../shared/slidesize';
+import { pxToMm } from '../shared/units';
 
 const EXPORTABLE = new Set(['FRAME', 'COMPONENT', 'INSTANCE']);
 
@@ -56,10 +56,11 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     frameCount: frames.length,
     widthPx: 0,
     heightPx: 0,
-    paper: null,
+    chip: null,
+    slideWPt: 0,
+    slideHPt: 0,
+    ptPerPx: 1,
     sizes: [],
-    presets: [],
-    defaultPresetId: '',
   };
 
   if (frames.length === 0) {
@@ -77,15 +78,16 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
   const sizes = Array.from(groups.values()).sort((a, b) => b.count - a.count);
 
   const { width, height } = frames[0];
-  const presets = presetOptions(width, height);
+  const plan = resolveSlide(width, height);
   const state: SelectionState = {
     ...base,
     widthPx: width,
     heightPx: height,
-    paper: exactStandardName(width, height) ?? detectPaper(width, height),
+    chip: plan?.chip ?? null,
+    slideWPt: plan?.wPt ?? width,
+    slideHPt: plan?.hPt ?? height,
+    ptPerPx: plan?.ptPerPx ?? 1,
     sizes,
-    presets,
-    defaultPresetId: defaultPresetId(presets),
   };
 
   if (sizes.length > 1) {
@@ -107,9 +109,9 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     };
   }
 
-  // presetOptions() 가 PowerPoint 한계(1~56인치)를 이미 걸러낸다.
-  // 실측이 한계를 넘더라도 비율이 맞는 표준 크기가 남아 있으면 그쪽으로 내보낼 수 있다.
-  if (presets.length === 0) {
+  // resolveSlide() 가 PowerPoint 한계(1~56인치)를 이미 본다.
+  // 실측이 한계를 넘더라도 비율이 맞는 표준 크기가 있으면 그쪽으로 내보낼 수 있다.
+  if (!plan) {
     const mm = `${fmt(pxToMm(width))}×${fmt(pxToMm(height))}mm`;
     const tooSmall = width < height ? width : height;
     return {

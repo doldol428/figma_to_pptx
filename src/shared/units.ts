@@ -114,8 +114,21 @@ export function detectPaper(wPx: number, hPx: number): string | null {
       return `${p.name} 가로`;
     }
   }
-  const ratio = wPx / hPx;
-  if (Math.abs(ratio - 16 / 9) < 0.01) return '16:9';
-  if (Math.abs(ratio - 4 / 3) < 0.01) return '4:3';
+  return detectRatio(wPx / hPx);
+}
+
+/** 용지 규격에 안 맞을 때 쓰는 비율 칩. 배율을 걸어도 비율은 변하지 않으므로 항상 유효하다. */
+const RATIOS: Array<[string, number]> = [
+  ['16:9', 16 / 9], ['9:16', 9 / 16],
+  ['4:3', 4 / 3], ['3:4', 3 / 4],
+  ['16:10', 16 / 10], ['10:16', 10 / 16],
+  ['3:2', 3 / 2], ['2:3', 2 / 3],
+  ['1:1', 1],
+];
+
+function detectRatio(ratio: number): string | null {
+  for (const [label, target] of RATIOS) {
+    if (Math.abs(ratio - target) / target <= 0.005) return label;
+  }
   return null;
 }

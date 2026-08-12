@@ -1,9 +1,11 @@
 import type { MainToUi, UiToMain } from '../shared/ir';
-import { findPreset, presetOptions } from '../shared/presets';
+import { resolveSlide } from '../shared/slidesize';
 import { extract } from './extract';
 import { collectFrames, validate } from './validate';
 
-figma.showUI(__html__, { width: 380, height: 560, themeColors: true });
+const UI_WIDTH = 300;
+
+figma.showUI(__html__, { width: UI_WIDTH, height: 180, themeColors: true });
 
 function post(msg: MainToUi): void {
   figma.ui.postMessage(msg);
@@ -21,6 +23,11 @@ figma.ui.onmessage = async (msg: UiToMain) => {
     return;
   }
 
+  if (msg.type === 'resize') {
+    figma.ui.resize(UI_WIDTH, Math.max(140, Math.min(720, Math.ceil(msg.height))));
+    return;
+  }
+
   if (msg.type === 'notify') {
     figma.notify(msg.message, msg.error ? { error: true } : undefined);
     return;
@@ -34,9 +41,8 @@ figma.ui.onmessage = async (msg: UiToMain) => {
     }
 
     const frames = collectFrames(figma.currentPage.selection);
-    const options = presetOptions(frames[0].width, frames[0].height);
-    const preset = findPreset(options, msg.presetId) ?? options[0];
-    if (!preset) {
+    const plan = resolveSlide(frames[0].width, frames[0].height);
+    if (!plan) {
       post({ type: 'error', message: '이 프레임 크기로 만들 수 있는 슬라이드 크기가 없습니다.' });
       return;
     }
@@ -44,7 +50,7 @@ figma.ui.onmessage = async (msg: UiToMain) => {
     try {
       const doc = await extract(frames, {
         imageDpi: msg.imageDpi,
-        preset,
+        plan,
         onProgress: (done, total, label) => post({ type: 'progress', done, total, label }),
       });
       post({ type: 'doc', doc, fileName: buildFileName(frames) });

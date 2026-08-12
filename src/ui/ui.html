@@ -17,7 +17,7 @@
     border: 1px solid var(--figma-color-border, #e5e5e5);
     border-radius: 6px;
     padding: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
   .size {
     font-size: 18px;
@@ -33,8 +33,10 @@
     border-radius: 4px;
     background: var(--figma-color-bg-brand-tertiary, #e5f0ff);
     color: var(--figma-color-text-brand, #0d63f3);
+    font-size: 11px;
     font-weight: 600;
-    margin-left: 4px;
+    vertical-align: 3px;
+    margin-left: 6px;
   }
   .blocked {
     background: var(--figma-color-bg-danger-tertiary, #ffe8e5);
@@ -42,27 +44,50 @@
     border-radius: 6px;
     padding: 10px;
     white-space: pre-wrap;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
-  button {
+
+  /* 드롭다운과 버튼을 같은 규격으로 맞춘다 — 나란히 놓이는 컨트롤이라 형태가 어긋나면 눈에 띈다. */
+  .control {
+    display: block;
     width: 100%;
     height: 32px;
-    border: 0;
+    padding: 0 10px;
     border-radius: 6px;
-    background: var(--figma-color-bg-brand, #0d99ff);
-    color: #fff;
     font: inherit;
     font-weight: 600;
     cursor: pointer;
   }
-  button:disabled { background: var(--figma-color-bg-disabled, #e5e5e5); color: var(--figma-color-text-disabled, #b3b3b3); cursor: not-allowed; }
-  label.row { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--figma-color-text-secondary, #666); }
-  label.row select { margin-left: auto; font: inherit; }
-  #warnings { max-height: 180px; overflow-y: auto; }
+  select.control {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid var(--figma-color-border, #e5e5e5);
+    background-color: transparent;
+    color: var(--figma-color-text, #000);
+    /* 네이티브 화살표를 끄고 테마를 따라가는 커스텀 화살표를 넣는다 */
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 26px;
+    margin-bottom: 6px;
+  }
+  select.control:hover { border-color: var(--figma-color-border-selected, #0d99ff); }
+  button.control {
+    border: 1px solid transparent;
+    background: var(--figma-color-bg-brand, #0d99ff);
+    color: #fff;
+  }
+  button.control:disabled {
+    background: var(--figma-color-bg-disabled, #e5e5e5);
+    color: var(--figma-color-text-disabled, #b3b3b3);
+    cursor: not-allowed;
+  }
+
+  #warnings { max-height: 200px; overflow-y: auto; margin: 8px 0 0; }
   #warnings ul { margin: 6px 0 0; padding-left: 16px; }
   #warnings li { margin-bottom: 4px; color: var(--figma-color-text-secondary, #666); }
+  #warnings li:last-child { margin-bottom: 0; }
   #warnings b { color: var(--figma-color-text, #000); font-weight: 600; }
-  .muted { color: var(--figma-color-text-tertiary, #999); }
   .hidden { display: none; }
 </style>
 </head>
@@ -75,28 +100,16 @@
 
   <div class="blocked hidden" id="blocked"></div>
 
-  <label class="row hidden" id="presetRow">
-    <select id="preset" style="width:100%; margin:0"></select>
-  </label>
+  <select class="control" id="dpi">
+    <option value="96">이미지 해상도 96 DPI</option>
+    <option value="150">이미지 해상도 150 DPI</option>
+    <option value="220" selected>이미지 해상도 220 DPI</option>
+    <option value="300">이미지 해상도 300 DPI</option>
+  </select>
 
-  <label class="row">
-    이미지 렌더 해상도
-    <select id="dpi">
-      <option value="96">96 DPI (화면)</option>
-      <option value="150">150 DPI</option>
-      <option value="220" selected>220 DPI (기본)</option>
-      <option value="300">300 DPI (인쇄)</option>
-    </select>
-  </label>
-  <div class="muted" id="dpiHint" style="margin-top:4px"></div>
+  <button class="control" id="export" disabled>PPTX 내보내기</button>
 
-  <p class="muted" id="note" style="margin:8px 0 10px">
-    Figma 1px = 1pt(72dpi) 로 환산합니다. 프레임 크기가 그대로 슬라이드 크기가 되며 비율은 손대지 않습니다.
-  </p>
-
-  <button id="export" disabled>PPTX 내보내기</button>
-
-  <div class="card hidden" id="warnings" style="margin-top:10px"></div>
+  <div class="card hidden" id="warnings"></div>
 
   <script>__SCRIPT__</script>
 </body>

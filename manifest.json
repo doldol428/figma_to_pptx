@@ -1,5 +1,5 @@
 {
-  "name": "Figma → PPTX (실측 크기 유지)",
+  "name": "Figma → PPTX",
   "id": "figma-to-pptx-truesize",
   "api": "1.0.0",
   "main": "dist/code.js",

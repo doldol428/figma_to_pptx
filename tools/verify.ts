@@ -9,6 +9,7 @@
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Doc } from '../src/shared/ir';
+import { resolveSlide } from '../src/shared/slidesize';
 import { exportScaleForDpi } from '../src/shared/units';
 import { composePptx } from '../src/ui/build';
 
@@ -29,7 +30,7 @@ const doc: Doc = {
   offsetYPt: 0,
   frameWPx: A4_W,
   frameHPx: A4_H,
-  presetLabel: '프레임 실측 (1px = 1pt)',
+  chip: 'A4 세로',
   warnings: [],
   slides: [
     {
@@ -109,6 +110,10 @@ function check(label: string, actual: unknown, expected: unknown): void {
   if (!ok) failures.push(label);
 }
 
+function round(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 function checkTruthy(label: string, ok: boolean): void {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}`);
   if (!ok) failures.push(label);
@@ -144,7 +149,7 @@ function widescreenDoc(): Doc {
     offsetYPt: 0,
     frameWPx: 1920,
     frameHPx: 1080,
-    presetLabel: 'PowerPoint 와이드스크린 16:9',
+    chip: '16:9',
     warnings: [],
     slides: [{
       name: '표지',
@@ -241,6 +246,39 @@ async function main(): Promise<void> {
   checkTruthy('선 굵기 8px → 4pt', w.xml.includes(`<a:ln w="${4 * 12700}">`));
   console.log(`  → ${w.cx / EMU_PER_MM} × ${w.cy / EMU_PER_MM} mm`);
   console.log(`dist/verify-16x9.pptx 생성 (${(w.bytes.length / 1024).toFixed(1)} KB)`);
+
+  /* ── 슬라이드 크기 자동 결정 ─────────────────────────────────── */
+
+  // 사용자에게 묻지 않고 프레임 크기만으로 결정된다. 판정표를 그대로 못박는다.
+  console.log('\n슬라이드 크기 자동 결정');
+  const cases: Array<[string, number, number, number, number, number, string | null]> = [
+    // 이름                프레임 W  프레임 H   슬라이드W 슬라이드H  배율        칩
+    ['A4 세로',            mm(210), mm(297),  mm(210), mm(297),  1,          'A4 세로'],
+    ['A4 가로',            mm(297), mm(210),  mm(297), mm(210),  1,          'A4 가로'],
+    ['960×540 (이미 표준)', 960,     540,      960,     540,      1,          '16:9'],
+    ['1920×1080',          1920,    1080,     960,     540,      0.5,        '16:9'],
+    ['1280×720',           1280,    720,      960,     540,      0.75,       '16:9'],
+    ['3840×2160 (4K)',     3840,    2160,     960,     540,      0.25,       '16:9'],
+    ['5120×2880 (5K)',     5120,    2880,     960,     540,      0.1875,     '16:9'],
+    ['1024×768',           1024,    768,      720,     540,      0.703125,   '4:3'],
+    ['1080×1920 (세로)',    1080,    1920,     540,     960,      0.5,        '9:16'],
+  ];
+  for (const [name, fw, fh, sw, sh, k, chip] of cases) {
+    const plan = resolveSlide(fw, fh);
+    const got = plan
+      ? `${round(plan.wPt)}×${round(plan.hPt)}pt ${plan.ptPerPx}× [${plan.chip ?? '-'}]`
+      : 'null';
+    const want = `${round(sw)}×${round(sh)}pt ${k}× [${chip ?? '-'}]`;
+    check(name, got, want);
+  }
+  // 균등 배율이므로 종횡비는 어떤 경우에도 보존돼야 한다.
+  for (const [name, fw, fh] of cases) {
+    const plan = resolveSlide(fw, fh)!;
+    checkTruthy(
+      `${name} — 종횡비 보존`,
+      Math.abs((plan.wPt - plan.offsetXPt * 2) / (plan.hPt - plan.offsetYPt * 2) - fw / fh) < 1e-9,
+    );
+  }
 
   /* ── 이미지 렌더 해상도 ──────────────────────────────────────── */
 

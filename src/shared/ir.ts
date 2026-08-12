@@ -155,7 +155,8 @@ export interface Doc {
   /** 원본 프레임 크기 (표시·디버깅용) */
   frameWPx: number;
   frameHPx: number;
-  presetLabel: string;
+  /** "16:9", "A4 세로" 같은 짧은 규격 칩 */
+  chip: string | null;
   slides: Slide[];
   warnings: Warning[];
 }
@@ -168,18 +169,6 @@ export interface SizeInfo {
   count: number;
 }
 
-/** presets.ts 의 PresetOption 과 같은 모양 — 메시지로 넘기기 위한 구조적 사본 */
-export interface PresetInfo {
-  id: string;
-  label: string;
-  wPt: number;
-  hPt: number;
-  ptPerPx: number;
-  offsetXPt: number;
-  offsetYPt: number;
-  native: boolean;
-}
-
 export interface SelectionState {
   /** export 가능 여부 — 프레임이 1개 이상이고 크기가 전부 같을 때만 true */
   ok: boolean;
@@ -188,13 +177,15 @@ export interface SelectionState {
   frameCount: number;
   widthPx: number;
   heightPx: number;
-  /** 감지된 규격 이름 (A4 세로, PowerPoint 와이드스크린 16:9 …) */
-  paper: string | null;
+  /** 짧은 규격 칩 ("16:9", "A4 세로"). 해당 없으면 null */
+  chip: string | null;
+  /** 자동 확정된 슬라이드 크기 (pt) — 사용자가 고르지 않는다 */
+  slideWPt: number;
+  slideHPt: number;
+  /** 적용될 균등 배율. 1 이면 실측. */
+  ptPerPx: number;
   /** 크기가 섞여 있을 때 각 크기별 개수 */
   sizes: SizeInfo[];
-  /** 선택 가능한 슬라이드 크기 — 항상 실측이 먼저, 비율이 맞는 표준이 뒤따른다 */
-  presets: PresetInfo[];
-  defaultPresetId: string;
 }
 
 export type MainToUi =
@@ -205,5 +196,7 @@ export type MainToUi =
 
 export type UiToMain =
   | { type: 'ready' }
-  | { type: 'export'; imageDpi: number; presetId: string }
+  | { type: 'export'; imageDpi: number }
+  /** 내용 높이에 맞춰 플러그인 창을 줄인다 — 경고 목록 유무에 따라 높이가 크게 달라진다 */
+  | { type: 'resize'; height: number }
   | { type: 'notify'; message: string; error?: boolean };
