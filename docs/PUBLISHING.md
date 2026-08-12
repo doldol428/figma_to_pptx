@@ -15,16 +15,44 @@
 "id": "innodep-export-dev"
 ```
 
-Figma 가 발급하는 ID 는 `1234567890123456789` 형태의 숫자 문자열이다.
+Figma 가 발급하는 ID 는 `1234567890123456789` 형태의 **숫자 문자열**이다.
 로컬 import 는 아무 문자열이나 통과하지만 게시는 발급된 ID 를 요구한다.
 
-받는 절차:
+Figma 는 ID 를 단독으로 발급해 주지 않는다. 새 플러그인을 하나 만들면 그 부산물로 ID 가
+생기므로, **껍데기 플러그인을 만들어 ID 만 꺼내 오고 버리는** 방식을 쓴다.
 
-1. 데스크톱 앱 → **Plugins → Development → New plugin…**
-2. **Figma design** + **Empty** 선택 → 아무 임시 폴더에나 생성
-3. 생성된 `manifest.json` 의 `id` 값을 복사
-4. 이 저장소의 `manifest.json` 에 붙여넣기
-5. 임시 폴더 삭제 후 이 저장소를 다시 import
+#### 절차
+
+1. 데스크톱 앱 메뉴 → **Plugins → Development → New plugin…**
+2. 이름에 `Innodep Export` 입력 (나중에 게시 모달에서 바꿀 수 있지만 맞춰 두는 편이 헷갈리지 않는다)
+3. 에디터 종류는 **Figma design** 선택
+4. 템플릿은 **Empty** 선택 — 어차피 버릴 파일들이라 가장 가벼운 걸 고른다
+5. 저장 위치를 묻는다. 바탕화면 등 **임시 폴더**를 지정한다. 이 저장소 안에 만들면 안 된다
+6. 생성된 폴더의 `manifest.json` 을 열어 `"id"` 값을 복사
+
+   ```json
+   { "name": "Innodep Export", "id": "1487654321098765432", ... }
+   ```
+
+7. 이 저장소의 `manifest.json` 에서 `"id"` 를 그 값으로 교체
+8. 임시 폴더 삭제
+
+#### 뒷정리 — 이걸 빠뜨리면 목록에 유령이 남는다
+
+ID 를 바꾸면 Figma 는 **다른 플러그인**으로 인식한다. 기존 `innodep-export-dev` 항목이
+개발 목록에 그대로 남아 있으므로 지워야 한다.
+
+1. **Plugins → Development → Manage plugins in development**
+2. 이전 `Innodep Export`(구 ID) 항목 제거
+3. **Import plugin from manifest…** 로 이 저장소의 `manifest.json` 을 다시 등록
+4. 실행해서 정상 동작 확인
+
+#### 알아둘 것
+
+- ID 는 **영구적**이다. 게시 후에는 이 ID 가 곧 그 플러그인이고, 바꾸면 별개의 플러그인이 된다.
+- ID 는 비밀이 아니다. Community URL 에 그대로 노출되는 공개 값이라 저장소에 커밋해도 된다.
+  오히려 커밋해 두어야 다른 PC 에서 clone 했을 때 같은 플러그인으로 잡힌다.
+- ID 는 발급한 Figma 계정에 묶인다. 게시도 그 계정으로 해야 한다.
 
 ### 2. 빌드
 
