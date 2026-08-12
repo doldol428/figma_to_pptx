@@ -1,5 +1,6 @@
 import type { SelectionState, SizeInfo } from '../shared/ir';
-import { MAX_SLIDE_IN, MIN_SLIDE_IN, detectPaper, pxToIn, pxToMm } from '../shared/units';
+import { defaultPresetId, exactStandardName, presetOptions } from '../shared/presets';
+import { detectPaper, pxToMm } from '../shared/units';
 
 const EXPORTABLE = new Set(['FRAME', 'COMPONENT', 'INSTANCE']);
 
@@ -57,6 +58,8 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     heightPx: 0,
     paper: null,
     sizes: [],
+    presets: [],
+    defaultPresetId: '',
   };
 
   if (frames.length === 0) {
@@ -74,12 +77,15 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
   const sizes = Array.from(groups.values()).sort((a, b) => b.count - a.count);
 
   const { width, height } = frames[0];
+  const presets = presetOptions(width, height);
   const state: SelectionState = {
     ...base,
     widthPx: width,
     heightPx: height,
-    paper: detectPaper(width, height),
+    paper: exactStandardName(width, height) ?? detectPaper(width, height),
     sizes,
+    presets,
+    defaultPresetId: defaultPresetId(presets),
   };
 
   if (sizes.length > 1) {
@@ -101,18 +107,16 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     };
   }
 
-  const wIn = pxToIn(width);
-  const hIn = pxToIn(height);
-  if (wIn < MIN_SLIDE_IN || hIn < MIN_SLIDE_IN) {
+  // presetOptions() 가 PowerPoint 한계(1~56인치)를 이미 걸러낸다.
+  // 실측이 한계를 넘더라도 비율이 맞는 표준 크기가 남아 있으면 그쪽으로 내보낼 수 있다.
+  if (presets.length === 0) {
+    const mm = `${fmt(pxToMm(width))}×${fmt(pxToMm(height))}mm`;
+    const tooSmall = width < height ? width : height;
     return {
       ...state,
-      reason: `프레임이 너무 작습니다 (${fmt(pxToMm(width))}×${fmt(pxToMm(height))}mm). PowerPoint 슬라이드는 한 변이 최소 1인치(25.4mm)여야 합니다.`,
-    };
-  }
-  if (wIn > MAX_SLIDE_IN || hIn > MAX_SLIDE_IN) {
-    return {
-      ...state,
-      reason: `프레임이 너무 큽니다 (${fmt(pxToMm(width))}×${fmt(pxToMm(height))}mm). PowerPoint 슬라이드는 한 변이 최대 56인치(1422mm)입니다.`,
+      reason: tooSmall * (1 / 72) < 1
+        ? `프레임이 너무 작습니다 (${mm}). PowerPoint 슬라이드는 한 변이 최소 1인치(25.4mm)여야 하고, 이 비율에 맞는 표준 크기도 없습니다.`
+        : `프레임이 너무 큽니다 (${mm}). PowerPoint 슬라이드는 한 변이 최대 56인치(1422mm)이고, 이 비율에 맞는 표준 크기도 없습니다.`,
     };
   }
 

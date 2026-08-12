@@ -7,6 +7,9 @@
  *
  * 기존 도구들이 프레임을 16:9 슬라이드에 욱여넣으면서 비율을 뭉개는 문제를
  * 여기서 원천 차단한다. 슬라이드 크기는 언제나 프레임 크기에서 유도된다.
+ *
+ * 예외는 presets.ts 의 표준 슬라이드 크기뿐인데, 그것도 프레임 비율과 일치할 때만
+ * 제시되고 적용될 때는 단일 균등 배율만 쓴다. 종횡비는 어느 경로로도 변하지 않는다.
  */
 
 export const PT_PER_INCH = 72;
@@ -27,6 +30,16 @@ export function pxToIn(px: number): number {
 /** Figma px → mm (UI 표시용) */
 export function pxToMm(px: number): number {
   return (pxToPt(px) / PT_PER_INCH) * MM_PER_INCH;
+}
+
+/** pt → inch (PptxGenJS 좌표 단위) */
+export function ptToIn(pt: number): number {
+  return pt / PT_PER_INCH;
+}
+
+/** pt → mm (UI 표시용) */
+export function ptToMm(pt: number): number {
+  return (pt / PT_PER_INCH) * MM_PER_INCH;
 }
 
 /** PowerPoint 슬라이드 한 변의 허용 범위 (inch). 벗어나면 PowerPoint 가 파일을 거부한다. */

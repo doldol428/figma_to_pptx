@@ -1,5 +1,5 @@
-import type { Doc, MainToUi, SelectionState, UiToMain } from '../shared/ir';
-import { pxToMm } from '../shared/units';
+import type { Doc, MainToUi, PresetInfo, SelectionState, UiToMain } from '../shared/ir';
+import { ptToMm } from '../shared/units';
 import { buildPptx } from './build';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -9,9 +9,15 @@ const elDetail = $('detail');
 const elBlocked = $('blocked');
 const elExport = $<HTMLButtonElement>('export');
 const elScale = $<HTMLSelectElement>('scale');
+const elPreset = $<HTMLSelectElement>('preset');
+const elPresetRow = $('presetRow');
+const elNote = $('note');
 const elWarnings = $('warnings');
 
 let busy = false;
+let state: SelectionState | null = null;
+/** 사용자가 직접 고른 프리셋. 선택이 바뀌어도 같은 id 가 남아 있으면 유지한다. */
+let chosenPresetId: string | null = null;
 
 function toMain(msg: UiToMain): void {
   parent.postMessage({ pluginMessage: msg }, '*');
@@ -21,31 +27,80 @@ function fmt(n: number): string {
   return (Math.round(n * 10) / 10).toLocaleString('ko-KR');
 }
 
-function renderSelection(state: SelectionState): void {
-  if (state.frameCount === 0) {
-    elSize.textContent = '—';
-    elDetail.textContent = '프레임을 선택하세요';
-  } else {
-    elSize.innerHTML =
-      `${fmt(pxToMm(state.widthPx))} × ${fmt(pxToMm(state.heightPx))}<small> mm</small>` +
-      (state.paper ? `<span class="badge">${state.paper}</span>` : '');
-    elDetail.textContent =
-      `프레임 ${state.frameCount}개 · ${fmt(state.widthPx)} × ${fmt(state.heightPx)} px`;
+function currentPreset(): PresetInfo | null {
+  if (!state || state.presets.length === 0) return null;
+  const id = chosenPresetId ?? state.defaultPresetId;
+  return state.presets.find((p) => p.id === id) ?? state.presets[0];
+}
+
+function renderPresetOptions(s: SelectionState): void {
+  if (s.presets.length <= 1) {
+    elPresetRow.classList.add('hidden');
+    elPreset.innerHTML = '';
+    return;
   }
 
-  if (state.reason) {
-    elBlocked.textContent = state.reason;
+  const selected = currentPreset();
+  elPreset.innerHTML = s.presets
+    .map((p) => {
+      const size = `${fmt(ptToMm(p.wPt))} × ${fmt(ptToMm(p.hPt))} mm`;
+      const sel = p.id === selected?.id ? ' selected' : '';
+      return `<option value="${escapeHtml(p.id)}"${sel}>${escapeHtml(p.label)} — ${size}</option>`;
+    })
+    .join('');
+  elPresetRow.classList.remove('hidden');
+}
+
+function renderSelection(s: SelectionState): void {
+  state = s;
+  // 이전에 고른 프리셋이 새 선택에 없으면 기본값으로 되돌린다.
+  if (chosenPresetId && !s.presets.some((p) => p.id === chosenPresetId)) {
+    chosenPresetId = null;
+  }
+
+  renderPresetOptions(s);
+  const preset = currentPreset();
+
+  if (s.frameCount === 0 || !preset) {
+    elSize.textContent = '—';
+    elDetail.textContent = s.frameCount === 0 ? '프레임을 선택하세요' : '';
+    elNote.textContent =
+      'Figma 1px = 1pt(72dpi) 로 환산합니다. 프레임 크기가 그대로 슬라이드 크기가 되며 비율은 손대지 않습니다.';
+  } else {
+    const badge = preset.native ? s.paper : preset.label;
+    elSize.innerHTML =
+      `${fmt(ptToMm(preset.wPt))} × ${fmt(ptToMm(preset.hPt))}<small> mm</small>` +
+      (badge ? `<span class="badge">${escapeHtml(badge)}</span>` : '');
+
+    const parts = [
+      `프레임 ${s.frameCount}개`,
+      `${fmt(s.widthPx)} × ${fmt(s.heightPx)} px`,
+    ];
+    if (preset.ptPerPx !== 1) parts.push(`균등 배율 ${round3(preset.ptPerPx)}×`);
+    elDetail.textContent = parts.join(' · ');
+
+    elNote.textContent = preset.native
+      ? 'Figma 1px = 1pt(72dpi). 프레임 크기가 그대로 슬라이드 크기가 됩니다.'
+      : `프레임 비율이 이 표준과 일치해서, 좌표·크기·폰트에 균등 배율 ${round3(preset.ptPerPx)}× 를 걸어 표준 크기로 맞춥니다. 비율은 바뀌지 않습니다.`;
+  }
+
+  if (s.reason) {
+    elBlocked.textContent = s.reason;
     elBlocked.classList.remove('hidden');
   } else {
     elBlocked.classList.add('hidden');
   }
 
-  elExport.disabled = !state.ok || busy;
+  elExport.disabled = !s.ok || busy;
   if (!busy) {
-    elExport.textContent = state.ok
-      ? `PPTX 내보내기 (슬라이드 ${state.frameCount}장)`
+    elExport.textContent = s.ok
+      ? `PPTX 내보내기 (슬라이드 ${s.frameCount}장)`
       : 'PPTX 내보내기';
   }
+}
+
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
 }
 
 function renderWarnings(doc: Doc): void {
@@ -78,13 +133,20 @@ function download(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+elPreset.addEventListener('change', () => {
+  chosenPresetId = elPreset.value;
+  if (state) renderSelection(state);
+});
+
 elExport.addEventListener('click', () => {
-  if (busy) return;
+  if (busy || !state) return;
+  const preset = currentPreset();
+  if (!preset) return;
   busy = true;
   elExport.disabled = true;
   elExport.textContent = '프레임 읽는 중…';
   elWarnings.classList.add('hidden');
-  toMain({ type: 'export', imageScale: Number(elScale.value) });
+  toMain({ type: 'export', imageScale: Number(elScale.value), presetId: preset.id });
 });
 
 window.onmessage = async (event: MessageEvent) => {
@@ -118,7 +180,7 @@ window.onmessage = async (event: MessageEvent) => {
       download(blob, msg.fileName);
       renderWarnings(msg.doc);
       const n = msg.doc.slides.length;
-      toMain({ type: 'notify', message: `슬라이드 ${n}장을 내보냈습니다.` });
+      toMain({ type: 'notify', message: `슬라이드 ${n}장을 내보냈습니다. (${msg.doc.presetLabel})` });
     } catch (err) {
       elBlocked.textContent = `PPTX 생성 실패: ${String(err)}`;
       elBlocked.classList.remove('hidden');
@@ -126,7 +188,6 @@ window.onmessage = async (event: MessageEvent) => {
     } finally {
       busy = false;
       elExport.disabled = false;
-      elExport.textContent = 'PPTX 내보내기';
       toMain({ type: 'ready' });
     }
   }

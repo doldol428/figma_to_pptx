@@ -5,8 +5,8 @@
  * UI 스레드(iframe)가 IR 을 PptxGenJS 호출로 옮긴다.
  * 두 스레드 사이는 postMessage 로만 통신하므로 IR 은 반드시 순수 JSON 이어야 한다.
  *
- * 좌표 단위는 전부 **Figma px**, 원점은 각 프레임의 좌상단.
- * pt/inch/EMU 변환은 UI 쪽 빌더에서 한 번만 수행한다.
+ * 좌표·크기·폰트 크기·선 굵기까지 **모든 수치는 Figma px**, 원점은 각 프레임의 좌상단.
+ * pt/inch/EMU 변환과 `ptPerPx` 배율 적용은 UI 쪽 빌더(build.ts)에서 한 번만 수행한다.
  */
 
 /** "RRGGBB" (샵 없음) */
@@ -34,7 +34,7 @@ export type Fill = SolidFill | NoFill;
 export interface Stroke {
   color: Hex;
   transparency: number;
-  /** pt (= px) */
+  /** px */
   width: number;
   dashType?: 'solid' | 'dash' | 'sysDot' | 'dashDot';
 }
@@ -43,9 +43,9 @@ export interface Shadow {
   type: 'outer' | 'inner';
   /** 0-359, 동쪽 기준 시계방향 */
   angle: number;
-  /** pt */
+  /** px */
   offset: number;
-  /** pt */
+  /** px */
   blur: number;
   color: Hex;
   /** 0.0 - 1.0 */
@@ -93,7 +93,7 @@ export interface ShapeItem {
 export interface Run {
   text: string;
   fontFace: string;
-  /** pt (= px) */
+  /** px */
   fontSize: number;
   bold: boolean;
   italic: boolean;
@@ -101,9 +101,9 @@ export interface Run {
   strike: boolean;
   color: Hex;
   transparency: number;
-  /** pt */
+  /** px */
   charSpacing?: number;
-  /** pt — 고정 행간 */
+  /** px — 고정 행간 */
   lineSpacing?: number;
   /** 배수 행간 */
   lineSpacingMultiple?: number;
@@ -144,10 +144,18 @@ export interface Slide {
 }
 
 export interface Doc {
-  /** 슬라이드 크기 = 프레임 크기 (px). 이 값이 그대로 물리 크기가 된다. */
-  widthPx: number;
-  heightPx: number;
-  paper: string | null;
+  /** 최종 슬라이드 크기 (pt) */
+  slideWPt: number;
+  slideHPt: number;
+  /** Figma px → pt 균등 배율. 실측이면 1. 모든 길이·폰트 크기에 동일하게 곱한다. */
+  ptPerPx: number;
+  /** 콘텐츠 중앙 정렬 보정 (pt). 프레임 비율이 슬라이드 비율과 정확히 같으면 0. */
+  offsetXPt: number;
+  offsetYPt: number;
+  /** 원본 프레임 크기 (표시·디버깅용) */
+  frameWPx: number;
+  frameHPx: number;
+  presetLabel: string;
   slides: Slide[];
   warnings: Warning[];
 }
@@ -160,6 +168,18 @@ export interface SizeInfo {
   count: number;
 }
 
+/** presets.ts 의 PresetOption 과 같은 모양 — 메시지로 넘기기 위한 구조적 사본 */
+export interface PresetInfo {
+  id: string;
+  label: string;
+  wPt: number;
+  hPt: number;
+  ptPerPx: number;
+  offsetXPt: number;
+  offsetYPt: number;
+  native: boolean;
+}
+
 export interface SelectionState {
   /** export 가능 여부 — 프레임이 1개 이상이고 크기가 전부 같을 때만 true */
   ok: boolean;
@@ -168,9 +188,13 @@ export interface SelectionState {
   frameCount: number;
   widthPx: number;
   heightPx: number;
+  /** 감지된 규격 이름 (A4 세로, PowerPoint 와이드스크린 16:9 …) */
   paper: string | null;
   /** 크기가 섞여 있을 때 각 크기별 개수 */
   sizes: SizeInfo[];
+  /** 선택 가능한 슬라이드 크기 — 항상 실측이 먼저, 비율이 맞는 표준이 뒤따른다 */
+  presets: PresetInfo[];
+  defaultPresetId: string;
 }
 
 export type MainToUi =
@@ -181,6 +205,5 @@ export type MainToUi =
 
 export type UiToMain =
   | { type: 'ready' }
-  | { type: 'export'; imageScale: number }
-  | { type: 'done' }
+  | { type: 'export'; imageScale: number; presetId: string }
   | { type: 'notify'; message: string; error?: boolean };

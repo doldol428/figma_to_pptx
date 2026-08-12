@@ -1,4 +1,5 @@
 import type { MainToUi, UiToMain } from '../shared/ir';
+import { findPreset, presetOptions } from '../shared/presets';
 import { extract } from './extract';
 import { collectFrames, validate } from './validate';
 
@@ -33,9 +34,17 @@ figma.ui.onmessage = async (msg: UiToMain) => {
     }
 
     const frames = collectFrames(figma.currentPage.selection);
+    const options = presetOptions(frames[0].width, frames[0].height);
+    const preset = findPreset(options, msg.presetId) ?? options[0];
+    if (!preset) {
+      post({ type: 'error', message: '이 프레임 크기로 만들 수 있는 슬라이드 크기가 없습니다.' });
+      return;
+    }
+
     try {
       const doc = await extract(frames, {
         imageScale: msg.imageScale,
+        preset,
         onProgress: (done, total, label) => post({ type: 'progress', done, total, label }),
       });
       post({ type: 'doc', doc, fileName: buildFileName(frames) });

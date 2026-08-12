@@ -21,9 +21,14 @@ const A4_W = mm(210);
 const A4_H = mm(297);
 
 const doc: Doc = {
-  widthPx: A4_W,
-  heightPx: A4_H,
-  paper: 'A4 세로',
+  slideWPt: A4_W,
+  slideHPt: A4_H,
+  ptPerPx: 1,
+  offsetXPt: 0,
+  offsetYPt: 0,
+  frameWPx: A4_W,
+  frameHPx: A4_H,
+  presetLabel: '프레임 실측 (1px = 1pt)',
   warnings: [],
   slides: [
     {
@@ -108,20 +113,71 @@ function checkTruthy(label: string, ok: boolean): void {
   if (!ok) failures.push(label);
 }
 
-async function main(): Promise<void> {
-  const buffer = await composePptx(doc).write({ outputType: 'nodebuffer' });
-  const bytes = buffer as Uint8Array;
-  await writeFile(new URL('../dist/verify-a4.pptx', import.meta.url), bytes);
-
+async function render(d: Doc): Promise<{
+  cx: number; cy: number; xml: string; bytes: Uint8Array; zip: JSZip;
+}> {
+  const bytes = (await composePptx(d).write({ outputType: 'nodebuffer' })) as Uint8Array;
   const zip = await JSZip.loadAsync(bytes);
   const presentation = await zip.file('ppt/presentation.xml')!.async('string');
-  const slide = await zip.file('ppt/slides/slide1.xml')!.async('string');
-
+  const xml = await zip.file('ppt/slides/slide1.xml')!.async('string');
   const sldSz = /<p:sldSz([^/]*)\/>/.exec(presentation)?.[1] ?? '';
-  const cx = Number(/cx="(\d+)"/.exec(sldSz)?.[1]);
-  const cy = Number(/cy="(\d+)"/.exec(sldSz)?.[1]);
+  return {
+    cx: Number(/cx="(\d+)"/.exec(sldSz)?.[1]),
+    cy: Number(/cy="(\d+)"/.exec(sldSz)?.[1]),
+    xml,
+    bytes,
+    zip,
+  };
+}
 
-  console.log('\n슬라이드 크기');
+/**
+ * 1920×1080 프레임 → PowerPoint 와이드스크린.
+ * 균등 배율 0.5 가 좌표·크기·폰트에 모두 걸려야 하고, 종횡비는 그대로여야 한다.
+ */
+function widescreenDoc(): Doc {
+  return {
+    slideWPt: 960,
+    slideHPt: 540,
+    ptPerPx: 0.5,
+    offsetXPt: 0,
+    offsetYPt: 0,
+    frameWPx: 1920,
+    frameHPx: 1080,
+    presetLabel: 'PowerPoint 와이드스크린 16:9',
+    warnings: [],
+    slides: [{
+      name: '표지',
+      fill: { kind: 'solid', color: '101010', transparency: 0 },
+      items: [
+        {
+          type: 'shape',
+          name: '가운데 사각형',
+          // 프레임 좌표계(px) 기준 — 배율 0.5 가 걸려 240pt 위치에 480×270pt 로 앉아야 한다
+          box: { x: 480, y: 270, w: 960, h: 540, rot: 0, flipH: false, flipV: false },
+          geom: { kind: 'rect' },
+          fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+          stroke: { color: 'FF0000', transparency: 0, width: 8, dashType: 'solid' },
+        },
+        {
+          type: 'text',
+          name: '제목',
+          box: { x: 160, y: 120, w: 1600, h: 200, rot: 0, flipH: false, flipV: false },
+          align: 'center', valign: 'middle', wrap: true,
+          runs: [{
+            text: '96px 제목', fontFace: 'Pretendard', fontSize: 96, bold: true,
+            italic: false, underline: false, strike: false, color: 'FFFFFF', transparency: 0,
+          }],
+        },
+      ],
+    }],
+  };
+}
+
+async function main(): Promise<void> {
+  const { cx, cy, xml: slide, bytes, zip } = await render(doc);
+  await writeFile(new URL('../dist/verify-a4.pptx', import.meta.url), bytes);
+
+  console.log('\nA4 실측 — 슬라이드 크기');
   check('가로 EMU (210mm)', cx, 210 * EMU_PER_MM);
   check('세로 EMU (297mm)', cy, 297 * EMU_PER_MM);
   console.log(`  → ${cx / EMU_PER_MM} × ${cy / EMU_PER_MM} mm`);
@@ -158,6 +214,32 @@ async function main(): Promise<void> {
   }
 
   console.log(`\ndist/verify-a4.pptx 생성 (${(bytes.length / 1024).toFixed(1)} KB)`);
+
+  /* ── 1920×1080 → PowerPoint 와이드스크린 ─────────────────────── */
+
+  const wide = widescreenDoc();
+  const w = await render(wide);
+  await writeFile(new URL('../dist/verify-16x9.pptx', import.meta.url), w.bytes);
+
+  console.log('\n1920×1080 → PowerPoint 와이드스크린 (균등 배율 0.5×)');
+  check('가로 EMU (13.333in)', w.cx, 12192000);
+  check('세로 EMU (7.5in)', w.cy, 6858000);
+  checkTruthy(
+    '종횡비가 정확히 16:9 로 유지됨',
+    Math.abs(w.cx / w.cy - 16 / 9) < 1e-9,
+  );
+  checkTruthy(
+    '프레임 (480,270) → 슬라이드 240pt (3048000 EMU)',
+    w.xml.includes(`<a:off x="${240 * 12700}" y="${135 * 12700}"/>`),
+  );
+  checkTruthy(
+    '960×540px 사각형 → 480×270pt',
+    w.xml.includes(`<a:ext cx="${480 * 12700}" cy="${270 * 12700}"/>`),
+  );
+  checkTruthy('폰트 96px → 48pt (배율이 폰트에도 적용됨)', w.xml.includes('sz="4800"'));
+  checkTruthy('선 굵기 8px → 4pt', w.xml.includes(`<a:ln w="${4 * 12700}">`));
+  console.log(`  → ${w.cx / EMU_PER_MM} × ${w.cy / EMU_PER_MM} mm`);
+  console.log(`dist/verify-16x9.pptx 생성 (${(w.bytes.length / 1024).toFixed(1)} KB)`);
 
   if (failures.length > 0) {
     console.error(`\n실패 ${failures.length}건: ${failures.join(', ')}`);

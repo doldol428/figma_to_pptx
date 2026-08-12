@@ -75,6 +75,10 @@
 
   <div class="blocked hidden" id="blocked"></div>
 
+  <label class="row hidden" id="presetRow">
+    <select id="preset" style="width:100%; margin:0"></select>
+  </label>
+
   <label class="row">
     이미지 렌더 배율
     <select id="scale">
@@ -85,7 +89,7 @@
     </select>
   </label>
 
-  <p class="muted" style="margin:8px 0 10px">
+  <p class="muted" id="note" style="margin:8px 0 10px">
     Figma 1px = 1pt(72dpi) 로 환산합니다. 프레임 크기가 그대로 슬라이드 크기가 되며 비율은 손대지 않습니다.
   </p>
 
