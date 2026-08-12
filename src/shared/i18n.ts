@@ -107,7 +107,7 @@ const KO: Strings = {
   effectUnsupported: (effect) => `${effect} 효과는 PPTX 에서 재현되지 않습니다.`,
   effectLayerBlur: '레이어 블러',
   effectBackgroundBlur: '배경 블러',
-  clipNotSupported: '내용 자르기(clip)는 PPTX 에서 재현되지 않아 넘친 요소가 그대로 보일 수 있습니다.',
+  clipNotSupported: '프레임 밖으로 넘치는 요소가 있습니다. PPTX 에는 내용 자르기가 없어 그대로 보입니다.',
   multipleFills: 'PPTX 도형은 채우기를 하나만 가질 수 있어 맨 위 레이어만 반영했습니다.',
   vectorStrokeAlign: (align) => `벡터 도형의 선 정렬 ${align} 은 PPTX 에서 중앙 정렬로 그려집니다.`,
   vectorPathFailed: '벡터 경로를 읽지 못해 사각형으로 대체했습니다.',
@@ -160,7 +160,7 @@ const EN: Strings = {
   effectLayerBlur: 'Layer blur',
   effectBackgroundBlur: 'Background blur',
   clipNotSupported:
-    'Clip content is not reproducible in PPTX, so overflowing elements may stay visible.',
+    'Content overflows this frame. PPTX has no clipping, so it stays visible.',
   multipleFills: 'A PPTX shape holds one fill, so only the topmost layer was used.',
   vectorStrokeAlign: (align) =>
     `Stroke alignment ${align} on a vector shape is drawn centred in PPTX.`,
