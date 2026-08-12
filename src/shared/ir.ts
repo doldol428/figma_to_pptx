@@ -205,5 +205,5 @@ export type MainToUi =
 
 export type UiToMain =
   | { type: 'ready' }
-  | { type: 'export'; imageScale: number; presetId: string }
+  | { type: 'export'; imageDpi: number; presetId: string }
   | { type: 'notify'; message: string; error?: boolean };

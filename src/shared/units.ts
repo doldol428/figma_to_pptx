@@ -46,6 +46,36 @@ export function ptToMm(pt: number): number {
 export const MIN_SLIDE_IN = 1;
 export const MAX_SLIDE_IN = 56;
 
+/** Figma exportAsync 의 SCALE 제약 한계. UI 내보내기와 동일하게 4배까지만 건다. */
+const MIN_EXPORT_SCALE = 0.05;
+const MAX_EXPORT_SCALE = 4;
+
+/**
+ * 목표 DPI → Figma 노드 렌더 배율.
+ *
+ * 노드 렌더 배율을 사용자에게 직접 받으면 안 된다. 같은 "2x" 라도 슬라이드 배율(ptPerPx)에
+ * 따라 실효 해상도가 몇 배씩 달라지기 때문이다.
+ *
+ *   폭 W px 인 노드를 배율 S 로 렌더 → S·W 픽셀
+ *   슬라이드에서의 물리 폭          → W·ptPerPx / 72 인치
+ *   실효 해상도                     → 72·S / ptPerPx  DPI
+ *
+ * 그래서 DPI 를 고정값으로 받고 배율을 역산한다. 어떤 프리셋을 골라도 결과 해상도가 같다.
+ */
+export function exportScaleForDpi(
+  dpi: number,
+  ptPerPx: number,
+): { scale: number; clamped: boolean; actualDpi: number } {
+  const ideal = (dpi * ptPerPx) / PT_PER_INCH;
+  const scale = Math.min(MAX_EXPORT_SCALE, Math.max(MIN_EXPORT_SCALE, ideal));
+  const clamped = Math.abs(scale - ideal) > 1e-6;
+  return {
+    scale: Math.round(scale * 1000) / 1000,
+    clamped,
+    actualDpi: Math.round((scale * PT_PER_INCH) / ptPerPx),
+  };
+}
+
 interface Paper {
   name: string;
   /** 세로 방향 기준 mm */

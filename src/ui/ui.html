@@ -80,14 +80,15 @@
   </label>
 
   <label class="row">
-    이미지 렌더 배율
-    <select id="scale">
-      <option value="1">1x</option>
-      <option value="2" selected>2x</option>
-      <option value="3">3x</option>
-      <option value="4">4x</option>
+    이미지 렌더 해상도
+    <select id="dpi">
+      <option value="96">96 DPI (화면)</option>
+      <option value="150">150 DPI</option>
+      <option value="220" selected>220 DPI (기본)</option>
+      <option value="300">300 DPI (인쇄)</option>
     </select>
   </label>
+  <div class="muted" id="dpiHint" style="margin-top:4px"></div>
 
   <p class="muted" id="note" style="margin:8px 0 10px">
     Figma 1px = 1pt(72dpi) 로 환산합니다. 프레임 크기가 그대로 슬라이드 크기가 되며 비율은 손대지 않습니다.

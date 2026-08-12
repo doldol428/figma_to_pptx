@@ -43,7 +43,7 @@ figma.ui.onmessage = async (msg: UiToMain) => {
 
     try {
       const doc = await extract(frames, {
-        imageScale: msg.imageScale,
+        imageDpi: msg.imageDpi,
         preset,
         onProgress: (done, total, label) => post({ type: 'progress', done, total, label }),
       });

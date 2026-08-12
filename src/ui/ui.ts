@@ -1,5 +1,5 @@
 import type { Doc, MainToUi, PresetInfo, SelectionState, UiToMain } from '../shared/ir';
-import { ptToMm } from '../shared/units';
+import { exportScaleForDpi, ptToMm } from '../shared/units';
 import { buildPptx } from './build';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -8,7 +8,8 @@ const elSize = $('size');
 const elDetail = $('detail');
 const elBlocked = $('blocked');
 const elExport = $<HTMLButtonElement>('export');
-const elScale = $<HTMLSelectElement>('scale');
+const elDpi = $<HTMLSelectElement>('dpi');
+const elDpiHint = $('dpiHint');
 const elPreset = $<HTMLSelectElement>('preset');
 const elPresetRow = $('presetRow');
 const elNote = $('note');
@@ -84,6 +85,8 @@ function renderSelection(s: SelectionState): void {
       : `프레임 비율이 이 표준과 일치해서, 좌표·크기·폰트에 균등 배율 ${round3(preset.ptPerPx)}× 를 걸어 표준 크기로 맞춥니다. 비율은 바뀌지 않습니다.`;
   }
 
+  renderDpiHint();
+
   if (s.reason) {
     elBlocked.textContent = s.reason;
     elBlocked.classList.remove('hidden');
@@ -101,6 +104,24 @@ function renderSelection(s: SelectionState): void {
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
+}
+
+/**
+ * 목표 DPI 가 실제로 어떤 렌더 배율이 되는지 보여준다.
+ * 슬라이드 배율에 따라 같은 DPI 라도 배율이 달라지므로 숨기지 않고 드러낸다.
+ */
+function renderDpiHint(): void {
+  const preset = currentPreset();
+  if (!preset) {
+    elDpiHint.textContent = '';
+    return;
+  }
+  const dpi = Number(elDpi.value);
+  const r = exportScaleForDpi(dpi, preset.ptPerPx);
+  const base = `둥근 모서리·크롭된 이미지를 노드 렌더 ${round3(r.scale)}× 로 다시 뽑습니다.`;
+  elDpiHint.textContent = r.clamped
+    ? `${base} Figma 한계(4×)에 걸려 실제로는 약 ${r.actualDpi} DPI 입니다.`
+    : base;
 }
 
 function renderWarnings(doc: Doc): void {
@@ -138,6 +159,8 @@ elPreset.addEventListener('change', () => {
   if (state) renderSelection(state);
 });
 
+elDpi.addEventListener('change', renderDpiHint);
+
 elExport.addEventListener('click', () => {
   if (busy || !state) return;
   const preset = currentPreset();
@@ -146,7 +169,7 @@ elExport.addEventListener('click', () => {
   elExport.disabled = true;
   elExport.textContent = '프레임 읽는 중…';
   elWarnings.classList.add('hidden');
-  toMain({ type: 'export', imageScale: Number(elScale.value), presetId: preset.id });
+  toMain({ type: 'export', imageDpi: Number(elDpi.value), presetId: preset.id });
 });
 
 window.onmessage = async (event: MessageEvent) => {

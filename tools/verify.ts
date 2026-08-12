@@ -9,6 +9,7 @@
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Doc } from '../src/shared/ir';
+import { exportScaleForDpi } from '../src/shared/units';
 import { composePptx } from '../src/ui/build';
 
 const EMU_PER_MM = 36000;
@@ -240,6 +241,25 @@ async function main(): Promise<void> {
   checkTruthy('선 굵기 8px → 4pt', w.xml.includes(`<a:ln w="${4 * 12700}">`));
   console.log(`  → ${w.cx / EMU_PER_MM} × ${w.cy / EMU_PER_MM} mm`);
   console.log(`dist/verify-16x9.pptx 생성 (${(w.bytes.length / 1024).toFixed(1)} KB)`);
+
+  /* ── 이미지 렌더 해상도 ──────────────────────────────────────── */
+
+  // 목표 DPI 는 슬라이드 배율과 무관하게 같은 실효 해상도로 떨어져야 한다.
+  // 배율을 사용자에게 직접 받으면 프리셋마다 해상도가 몇 배씩 널뛴다.
+  console.log('\n이미지 렌더 해상도 (220 DPI 고정 요청)');
+  for (const [label, ptPerPx] of [
+    ['A4 실측 (1×)', 1],
+    ['1920 → 와이드스크린 (0.5×)', 0.5],
+    ['3840 → 와이드스크린 (0.25×)', 0.25],
+  ] as const) {
+    const r = exportScaleForDpi(220, ptPerPx);
+    check(`${label} → 실효 DPI`, r.actualDpi, 220);
+    console.log(`         노드 렌더 배율 ${r.scale}×`);
+  }
+  // A4 실측에서 300 DPI 는 4.17× 라 Figma 한계에 걸린다. 조용히 넘어가면 안 된다.
+  const clampedCase = exportScaleForDpi(300, 1);
+  checkTruthy('A4 실측 300 DPI 는 4× 한계에 걸린 것으로 보고됨', clampedCase.clamped);
+  check('한계 적용 후 실제 배율', clampedCase.scale, 4);
 
   if (failures.length > 0) {
     console.error(`\n실패 ${failures.length}건: ${failures.join(', ')}`);
