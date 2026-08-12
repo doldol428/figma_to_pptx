@@ -164,23 +164,23 @@
 </head>
 <body>
   <div class="card">
-    <h1>슬라이드 크기</h1>
+    <h1 id="slideSizeTitle"></h1>
     <div class="size" id="size">—</div>
-    <div class="sub" id="detail">프레임을 선택하세요</div>
+    <div class="sub" id="detail"></div>
   </div>
 
   <div class="blocked hidden" id="blocked"></div>
 
   <div class="field">
-    <span class="field-label" id="dpiLabel">이미지 해상도</span>
+    <span class="field-label" id="dpiLabel"></span>
     <div class="select" id="dpiSelect">
       <button type="button" class="control secondary select-trigger" id="dpiTrigger"
               aria-haspopup="listbox" aria-expanded="false" aria-labelledby="dpiLabel"></button>
-      <div class="select-menu hidden" id="dpiMenu" role="listbox" aria-label="이미지 해상도"></div>
+      <div class="select-menu hidden" id="dpiMenu" role="listbox"></div>
     </div>
   </div>
 
-  <button type="button" class="control primary" id="export" disabled>PPTX 내보내기</button>
+  <button type="button" class="control primary" id="export" disabled></button>
 
   <div class="card hidden" id="warnings"></div>
 

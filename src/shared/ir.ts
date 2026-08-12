@@ -9,6 +9,8 @@
  * pt/inch/EMU 변환과 `ptPerPx` 배율 적용은 UI 쪽 빌더(build.ts)에서 한 번만 수행한다.
  */
 
+import type { Locale } from './i18n';
+
 /** "RRGGBB" (샵 없음) */
 export type Hex = string;
 
@@ -190,12 +192,13 @@ export interface SelectionState {
 
 export type MainToUi =
   | { type: 'selection'; state: SelectionState }
-  | { type: 'progress'; done: number; total: number; label: string }
+  | { type: 'progress'; done: number; total: number }
   | { type: 'doc'; doc: Doc; fileName: string }
   | { type: 'error'; message: string };
 
 export type UiToMain =
-  | { type: 'ready' }
+  /** locale 은 UI 만 알 수 있어(navigator.languages) 첫 메시지에 실어 보낸다 */
+  | { type: 'ready'; locale: Locale }
   | { type: 'export'; imageDpi: number }
   /** 내용 높이에 맞춰 플러그인 창을 줄인다 — 경고 목록 유무에 따라 높이가 크게 달라진다 */
   | { type: 'resize'; height: number }

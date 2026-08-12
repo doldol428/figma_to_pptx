@@ -9,6 +9,7 @@
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import type { Doc } from '../src/shared/ir';
+import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
 import { exportScaleForDpi } from '../src/shared/units';
 import { composePptx } from '../src/ui/build';
@@ -250,6 +251,7 @@ async function main(): Promise<void> {
   /* ── 슬라이드 크기 자동 결정 ─────────────────────────────────── */
 
   // 사용자에게 묻지 않고 프레임 크기만으로 결정된다. 판정표를 그대로 못박는다.
+  setLocale('ko');
   console.log('\n슬라이드 크기 자동 결정');
   const cases: Array<[string, number, number, number, number, number, string | null]> = [
     // 이름                프레임 W  프레임 H   슬라이드W 슬라이드H  배율        칩
@@ -279,6 +281,27 @@ async function main(): Promise<void> {
       Math.abs((plan.wPt - plan.offsetXPt * 2) / (plan.hPt - plan.offsetYPt * 2) - fw / fh) < 1e-9,
     );
   }
+
+  /* ── 로케일 ──────────────────────────────────────────────────── */
+
+  // 한국어 / 영어 둘만 지원하고 나머지는 전부 영어로 떨어져야 한다.
+  console.log('\n로케일 판정');
+  check('ko-KR', resolveLocale(['ko-KR']), 'ko');
+  check('ko', resolveLocale(['ko']), 'ko');
+  check('en-US', resolveLocale(['en-US']), 'en');
+  check('ja-JP → 영어', resolveLocale(['ja-JP']), 'en');
+  check('zh-CN → 영어', resolveLocale(['zh-CN']), 'en');
+  check('빈 목록 → 영어', resolveLocale([]), 'en');
+  check('fr-FR, ko-KR → 한국어', resolveLocale(['fr-FR', 'ko-KR']), 'ko');
+
+  // 용지 칩은 번역되고, 비율 칩은 언어와 무관하게 같아야 한다.
+  setLocale('en');
+  check('영어 용지 칩', resolveSlide(mm(210), mm(297))?.chip, 'A4 Portrait');
+  check('영어 가로 칩', resolveSlide(mm(297), mm(210))?.chip, 'A4 Landscape');
+  check('영어 비율 칩', resolveSlide(1920, 1080)?.chip, '16:9');
+  setLocale('ko');
+  check('한국어 용지 칩', resolveSlide(mm(210), mm(297))?.chip, 'A4 세로');
+  check('한국어 비율 칩', resolveSlide(1920, 1080)?.chip, '16:9');
 
   /* ── 이미지 렌더 해상도 ──────────────────────────────────────── */
 

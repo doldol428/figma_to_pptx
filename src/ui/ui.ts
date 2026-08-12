@@ -1,3 +1,4 @@
+import { resolveLocale, setLocale, t } from '../shared/i18n';
 import type { Doc, MainToUi, SelectionState, UiToMain } from '../shared/ir';
 import { ptToMm } from '../shared/units';
 import { buildPptx } from './build';
@@ -11,12 +12,13 @@ const elBlocked = $('blocked');
 const elExport = $<HTMLButtonElement>('export');
 const elWarnings = $('warnings');
 
-const DPI_OPTIONS: DropdownOption[] = [
-  { value: 96, label: '96 DPI', note: '화면' },
-  { value: 150, label: '150 DPI' },
-  { value: 220, label: '220 DPI', note: '기본' },
-  { value: 300, label: '300 DPI', note: '인쇄' },
-];
+/*
+ * Figma 는 계정 언어를 플러그인에 노출하지 않는다. iframe 로케일(데스크톱 앱이면 Electron,
+ * 웹이면 브라우저)이 가장 가까운 신호라 이걸 쓰고, 한국어가 아니면 전부 영어로 떨어진다.
+ * main 스레드는 navigator 에 접근할 수 없으므로 ready 메시지로 결과를 전달한다.
+ */
+const locale = resolveLocale(navigator.languages ?? [navigator.language]);
+setLocale(locale);
 
 let busy = false;
 let state: SelectionState | null = null;
@@ -26,11 +28,19 @@ function toMain(msg: UiToMain): void {
 }
 
 function fmt(n: number): string {
-  return (Math.round(n * 10) / 10).toLocaleString('ko-KR');
+  return (Math.round(n * 10) / 10).toLocaleString(t().numberLocale);
 }
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
+}
+
+function renderStaticText(): void {
+  $('slideSizeTitle').textContent = t().slideSize;
+  $('dpiLabel').textContent = t().imageResolution;
+  $('dpiMenu').setAttribute('aria-label', t().imageResolution);
+  elDetail.textContent = t().selectFrame;
+  elExport.textContent = t().exportButton;
 }
 
 function renderSelection(s: SelectionState): void {
@@ -41,14 +51,14 @@ function renderSelection(s: SelectionState): void {
 
   if (s.frameCount === 0) {
     elSize.textContent = '—';
-    elDetail.textContent = '프레임을 선택하세요';
+    elDetail.textContent = t().selectFrame;
   } else {
     elSize.innerHTML =
       `${fmt(ptToMm(s.slideWPt))} × ${fmt(ptToMm(s.slideHPt))}<small> mm</small>` +
       (s.chip ? `<span class="badge">${escapeHtml(s.chip)}</span>` : '');
 
-    const parts = [`프레임 ${s.frameCount}개`, `${fmt(s.widthPx)} × ${fmt(s.heightPx)} px`];
-    if (s.ptPerPx !== 1) parts.push(`균등 배율 ${round3(s.ptPerPx)}×`);
+    const parts = [t().frameCount(s.frameCount), `${fmt(s.widthPx)} × ${fmt(s.heightPx)} px`];
+    if (s.ptPerPx !== 1) parts.push(t().uniformScale(round3(s.ptPerPx)));
     elDetail.textContent = parts.join(' · ');
   }
 
@@ -70,7 +80,7 @@ function renderWarnings(doc: Doc): void {
   const items = doc.warnings
     .map((w) => `<li><b>${escapeHtml(w.slide)} › ${escapeHtml(w.node)}</b><br>${escapeHtml(w.message)}</li>`)
     .join('');
-  elWarnings.innerHTML = `<h1>변환 참고 ${doc.warnings.length}건</h1><ul>${items}</ul>`;
+  elWarnings.innerHTML = `<h1>${t().warningsTitle(doc.warnings.length)}</h1><ul>${items}</ul>`;
   elWarnings.classList.remove('hidden');
 }
 
@@ -104,6 +114,15 @@ function syncHeight(): void {
   toMain({ type: 'resize', height });
 }
 
+const DPI_OPTIONS: DropdownOption[] = [
+  { value: 96, label: '96 DPI', note: t().dpiScreen },
+  { value: 150, label: '150 DPI' },
+  { value: 220, label: '220 DPI', note: t().dpiDefault },
+  { value: 300, label: '300 DPI', note: t().dpiPrint },
+];
+
+renderStaticText();
+
 const dpi = new Dropdown(
   $('dpiSelect'),
   $<HTMLButtonElement>('dpiTrigger'),
@@ -120,7 +139,7 @@ elExport.addEventListener('click', () => {
   busy = true;
   elExport.disabled = true;
   dpi.setDisabled(true);
-  elExport.textContent = '읽는 중…';
+  elExport.textContent = t().reading(0, 0);
   elWarnings.classList.add('hidden');
   toMain({ type: 'export', imageDpi: dpi.value });
 });
@@ -129,7 +148,7 @@ function finish(): void {
   busy = false;
   elExport.disabled = !state?.ok;
   dpi.setDisabled(false);
-  elExport.textContent = 'PPTX 내보내기';
+  elExport.textContent = t().exportButton;
 }
 
 window.onmessage = async (event: MessageEvent) => {
@@ -142,7 +161,7 @@ window.onmessage = async (event: MessageEvent) => {
   }
 
   if (msg.type === 'progress') {
-    elExport.textContent = `읽는 중… ${msg.done}/${msg.total}`;
+    elExport.textContent = t().reading(msg.done, msg.total);
     return;
   }
 
@@ -155,21 +174,21 @@ window.onmessage = async (event: MessageEvent) => {
   }
 
   if (msg.type === 'doc') {
-    elExport.textContent = '만드는 중…';
+    elExport.textContent = t().building;
     try {
       const blob = await buildPptx(msg.doc);
       download(blob, msg.fileName);
       renderWarnings(msg.doc);
       const size = `${fmt(ptToMm(msg.doc.slideWPt))} × ${fmt(ptToMm(msg.doc.slideHPt))} mm`;
-      toMain({ type: 'notify', message: `슬라이드 ${msg.doc.slides.length}장 · ${size}` });
+      toMain({ type: 'notify', message: t().exported(msg.doc.slides.length, size) });
     } catch (err) {
-      elBlocked.textContent = `PPTX 생성 실패: ${String(err)}`;
+      elBlocked.textContent = t().buildFailed(String(err));
       elBlocked.classList.remove('hidden');
-      toMain({ type: 'notify', message: 'PPTX 생성에 실패했습니다.', error: true });
+      toMain({ type: 'notify', message: t().exportFailed, error: true });
     } finally {
       finish();
     }
   }
 };
 
-toMain({ type: 'ready' });
+toMain({ type: 'ready', locale });

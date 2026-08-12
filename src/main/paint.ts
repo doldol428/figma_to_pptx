@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n';
 import type { Fill, Hex, Shadow, Stroke } from '../shared/ir';
 
 export function toHex(c: RGB | RGBA): Hex {
@@ -110,7 +111,7 @@ export function resolveFill(
         color: avg.color,
         transparency: transparency(avg.opacity * pOpacity * nodeOpacity),
       },
-      note: `그라디언트(${paint.type})는 PPTX 단색 #${avg.color} 으로 근사했습니다.`,
+      note: t().gradientApproximated(paint.type, avg.color),
     };
   }
 
@@ -184,8 +185,8 @@ export function unsupportedEffects(
   const names: string[] = [];
   for (const e of effects) {
     if (e.visible === false) continue;
-    if (e.type === 'LAYER_BLUR') names.push('레이어 블러');
-    else if (e.type === 'BACKGROUND_BLUR') names.push('배경 블러');
+    if (e.type === 'LAYER_BLUR') names.push(t().effectLayerBlur);
+    else if (e.type === 'BACKGROUND_BLUR') names.push(t().effectBackgroundBlur);
   }
   return names;
 }

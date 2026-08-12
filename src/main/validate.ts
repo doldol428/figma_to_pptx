@@ -1,4 +1,5 @@
 import type { SelectionState, SizeInfo } from '../shared/ir';
+import { t } from '../shared/i18n';
 import { resolveSlide } from '../shared/slidesize';
 import { pxToMm } from '../shared/units';
 
@@ -95,32 +96,24 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
   if (sizes.length > 1) {
     // PPTX 는 파일 하나에 슬라이드 크기가 하나뿐이다. 섞이면 어느 쪽도 원본 비율을 지킬 수 없다.
     const list = sizes
-      .map((s) => `${fmt(s.w)}×${fmt(s.h)}px (${s.count}개)`)
+      .map((s) => t().sizeEntry(fmt(s.w), fmt(s.h), s.count))
       .join(', ');
-    return {
-      ...state,
-      reason: `프레임 크기가 ${sizes.length}종류로 섞여 있습니다: ${list}\nPPTX 는 파일당 슬라이드 크기가 하나뿐이라, 같은 크기끼리만 선택해 주세요.`,
-    };
+    return { ...state, reason: t().mixedSizes(sizes.length, list) };
   }
 
   const rotated = frames.filter((f) => 'rotation' in f && Math.abs(f.rotation) > 0.01);
   if (rotated.length > 0) {
-    return {
-      ...state,
-      reason: `회전된 프레임이 있습니다 (${rotated[0].name}). 슬라이드 기준이 되는 프레임은 회전이 0 이어야 합니다.`,
-    };
+    return { ...state, reason: t().rotatedFrame(rotated[0].name) };
   }
 
   // resolveSlide() 가 PowerPoint 한계(1~56인치)를 이미 본다.
   // 실측이 한계를 넘더라도 비율이 맞는 표준 크기가 있으면 그쪽으로 내보낼 수 있다.
   if (!plan) {
     const mm = `${fmt(pxToMm(width))}×${fmt(pxToMm(height))}mm`;
-    const tooSmall = width < height ? width : height;
+    const shortest = Math.min(width, height);
     return {
       ...state,
-      reason: tooSmall * (1 / 72) < 1
-        ? `프레임이 너무 작습니다 (${mm}). PowerPoint 슬라이드는 한 변이 최소 1인치(25.4mm)여야 하고, 이 비율에 맞는 표준 크기도 없습니다.`
-        : `프레임이 너무 큽니다 (${mm}). PowerPoint 슬라이드는 한 변이 최대 56인치(1422mm)이고, 이 비율에 맞는 표준 크기도 없습니다.`,
+      reason: shortest / 72 < 1 ? t().tooSmall(mm) : t().tooLarge(mm),
     };
   }
 

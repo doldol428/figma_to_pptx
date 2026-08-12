@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 /**
  * 단위 규약 — 이 플러그인의 존재 이유.
  *
@@ -108,10 +110,10 @@ export function detectPaper(wPx: number, hPx: number): string | null {
   const tol = 1.5; // mm
   for (const p of PAPERS) {
     if (Math.abs(wMm - p.wMm) <= tol && Math.abs(hMm - p.hMm) <= tol) {
-      return `${p.name} 세로`;
+      return t().paperChip(p.name, true);
     }
     if (Math.abs(wMm - p.hMm) <= tol && Math.abs(hMm - p.wMm) <= tol) {
-      return `${p.name} 가로`;
+      return t().paperChip(p.name, false);
     }
   }
   return detectRatio(wPx / hPx);

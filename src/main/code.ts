@@ -1,3 +1,4 @@
+import { setLocale, t } from '../shared/i18n';
 import type { MainToUi, UiToMain } from '../shared/ir';
 import { resolveSlide } from '../shared/slidesize';
 import { extract } from './extract';
@@ -19,6 +20,8 @@ figma.on('selectionchange', sendSelection);
 
 figma.ui.onmessage = async (msg: UiToMain) => {
   if (msg.type === 'ready') {
+    // 로케일은 UI 만 알 수 있다 (navigator.languages). 선택 상태를 만들기 전에 먼저 심는다.
+    setLocale(msg.locale);
     sendSelection();
     return;
   }
@@ -37,14 +40,14 @@ figma.ui.onmessage = async (msg: UiToMain) => {
     const state = validate(figma.currentPage.selection);
     if (!state.ok) {
       // 선택이 비어 있으면 reason 이 없다 (UI 가 자체 안내한다). 버튼이 막혀 있어 도달할 일은 없지만 대비한다.
-      post({ type: 'error', message: state.reason || '내보낼 프레임을 선택하세요.' });
+      post({ type: 'error', message: state.reason || t().noFrameSelected });
       return;
     }
 
     const frames = collectFrames(figma.currentPage.selection);
     const plan = resolveSlide(frames[0].width, frames[0].height);
     if (!plan) {
-      post({ type: 'error', message: '이 프레임 크기로 만들 수 있는 슬라이드 크기가 없습니다.' });
+      post({ type: 'error', message: t().noSlideSize });
       return;
     }
 
@@ -52,11 +55,11 @@ figma.ui.onmessage = async (msg: UiToMain) => {
       const doc = await extract(frames, {
         imageDpi: msg.imageDpi,
         plan,
-        onProgress: (done, total, label) => post({ type: 'progress', done, total, label }),
+        onProgress: (done, total) => post({ type: 'progress', done, total }),
       });
       post({ type: 'doc', doc, fileName: buildFileName(frames) });
     } catch (err) {
-      post({ type: 'error', message: `변환 중 오류: ${String(err)}` });
+      post({ type: 'error', message: t().conversionError(String(err)) });
     }
   }
 };
