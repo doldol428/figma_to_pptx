@@ -3,8 +3,6 @@
 Figma 프레임을 **원본 물리 크기 그대로** PPTX 로 내보내는 Figma 플러그인.
 
 > 게시 준비는 [docs/PUBLISHING.md](docs/PUBLISHING.md) 참고.
-> `manifest.json` 의 `id` 는 아직 개발용 placeholder(`innodep-export-dev`)이며,
-> 게시 전에 Figma 가 발급한 숫자 ID 로 교체해야 한다.
 
 기존 Figma → PPTX 도구들은 프레임을 16:9 슬라이드에 욱여넣는다.
 A4(210×297mm) 문서를 만들어도 결과물은 4:3 이나 16:9 로 늘어나거나 레터박스가 붙는다.

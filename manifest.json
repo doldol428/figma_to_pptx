@@ -1,6 +1,6 @@
 {
   "name": "Innodep Export",
-  "id": "innodep-export-dev",
+  "id": "1669210357172947016",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",
@@ -8,6 +8,6 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": ["none"],
-    "reasoning": "모든 변환은 로컬에서 수행되며 외부 통신이 없습니다."
+    "reasoning": "All conversion runs locally in the plugin. No network requests are made."
   }
 }
