@@ -36,7 +36,8 @@ figma.ui.onmessage = async (msg: UiToMain) => {
   if (msg.type === 'export') {
     const state = validate(figma.currentPage.selection);
     if (!state.ok) {
-      post({ type: 'error', message: state.reason });
+      // 선택이 비어 있으면 reason 이 없다 (UI 가 자체 안내한다). 버튼이 막혀 있어 도달할 일은 없지만 대비한다.
+      post({ type: 'error', message: state.reason || '내보낼 프레임을 선택하세요.' });
       return;
     }
 

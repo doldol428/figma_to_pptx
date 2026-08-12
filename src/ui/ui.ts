@@ -36,6 +36,9 @@ function round3(n: number): number {
 function renderSelection(s: SelectionState): void {
   state = s;
 
+  // 선택이 비어 있을 땐 별도 오류 박스를 띄우지 않고 이 줄만 빨갛게 둔다 — 같은 말을 두 번 할 필요가 없다.
+  elDetail.classList.toggle('danger', s.frameCount === 0);
+
   if (s.frameCount === 0) {
     elSize.textContent = '—';
     elDetail.textContent = '프레임을 선택하세요';

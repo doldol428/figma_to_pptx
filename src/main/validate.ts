@@ -63,8 +63,10 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     sizes: [],
   };
 
+  // 선택이 비어 있는 건 오류가 아니라 시작 상태다.
+  // UI 가 슬라이드 크기 영역에서 안내하므로 별도 사유를 만들지 않는다.
   if (frames.length === 0) {
-    return { ...base, reason: '내보낼 프레임을 선택하세요. (프레임 / 컴포넌트 / 인스턴스)' };
+    return base;
   }
 
   // 크기별로 묶는다 — 하나로 모이지 않으면 내보낼 수 없다.
