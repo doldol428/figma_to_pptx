@@ -41,11 +41,9 @@ export interface Strings {
 
   /* 선택 검증 */
   noFrameSelected: string;
-  sizeEntry: (w: string, h: string, count: number) => string;
-  mixedSizes: (kinds: number, list: string) => string;
+  mixedSizes: (kinds: number) => string;
   rotatedFrame: (name: string) => string;
-  tooSmall: (mm: string) => string;
-  tooLarge: (mm: string) => string;
+  sizeOutOfRange: (mm: string) => string;
   noSlideSize: string;
   conversionError: (err: string) => string;
 
@@ -92,19 +90,11 @@ const KO: Strings = {
 
   paperChip: (name, portrait) => `${name} ${portrait ? '세로' : '가로'}`,
 
-  noFrameSelected: '내보낼 프레임을 선택하세요.',
-  sizeEntry: (w, h, count) => `${w}×${h}px (${count}개)`,
-  mixedSizes: (kinds, list) =>
-    `프레임 크기가 ${kinds}종류로 섞여 있습니다: ${list}\n`
-    + 'PPTX 는 파일당 슬라이드 크기가 하나뿐이라, 같은 크기끼리만 선택해 주세요.',
-  rotatedFrame: (name) =>
-    `회전된 프레임이 있습니다 (${name}). 슬라이드 기준이 되는 프레임은 회전이 0 이어야 합니다.`,
-  tooSmall: (mm) =>
-    `프레임이 너무 작습니다 (${mm}). PowerPoint 슬라이드는 한 변이 최소 1인치(25.4mm)여야 하고, `
-    + '이 비율에 맞는 표준 크기도 없습니다.',
-  tooLarge: (mm) =>
-    `프레임이 너무 큽니다 (${mm}). PowerPoint 슬라이드는 한 변이 최대 56인치(1422mm)이고, `
-    + '이 비율에 맞는 표준 크기도 없습니다.',
+  noFrameSelected: '내보낼 프레임을 선택하세요',
+  mixedSizes: (kinds) => `프레임 크기가 ${kinds}종류로 섞여 있습니다\n같은 크기끼리만 선택해 주세요`,
+  rotatedFrame: (name) => `회전된 프레임은 내보낼 수 없습니다 (${name})`,
+  // 허용 범위는 PowerPoint 사정이라 사용자가 알 길이 없다. 숫자는 남기고 설명은 뺀다.
+  sizeOutOfRange: (mm) => `슬라이드 한 변은 25.4~1422mm 여야 합니다 (지금 ${mm})`,
   noSlideSize: '이 프레임 크기로 만들 수 있는 슬라이드 크기가 없습니다.',
   conversionError: (err) => `변환 중 오류: ${err}`,
 
@@ -152,19 +142,11 @@ const EN: Strings = {
 
   paperChip: (name, portrait) => `${name} ${portrait ? 'Portrait' : 'Landscape'}`,
 
-  noFrameSelected: 'Select the frames you want to export.',
-  sizeEntry: (w, h, count) => `${w}×${h}px (${count})`,
-  mixedSizes: (kinds, list) =>
-    `The selection mixes ${kinds} different frame sizes: ${list}\n`
-    + 'A PPTX file has a single slide size, so select frames that are all the same size.',
-  rotatedFrame: (name) =>
-    `A selected frame is rotated (${name}). Frames that define the slide must have zero rotation.`,
-  tooSmall: (mm) =>
-    `The frame is too small (${mm}). A PowerPoint slide must be at least 1 inch (25.4mm) per side, `
-    + 'and no standard size matches this aspect ratio.',
-  tooLarge: (mm) =>
-    `The frame is too large (${mm}). A PowerPoint slide can be at most 56 inches (1422mm) per side, `
-    + 'and no standard size matches this aspect ratio.',
+  noFrameSelected: 'Select the frames you want to export',
+  mixedSizes: (kinds) =>
+    `${kinds} different frame sizes are selected\nSelect frames that are all the same size`,
+  rotatedFrame: (name) => `A rotated frame cannot be exported (${name})`,
+  sizeOutOfRange: (mm) => `A slide side must be between 25.4mm and 1422mm (currently ${mm})`,
   noSlideSize: 'No slide size can be produced from this frame size.',
   conversionError: (err) => `Conversion failed: ${err}`,
 

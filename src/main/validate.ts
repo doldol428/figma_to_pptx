@@ -1,4 +1,4 @@
-import type { SelectionState, SizeInfo } from '../shared/ir';
+import type { SelectionState } from '../shared/ir';
 import { t } from '../shared/i18n';
 import { resolveSlide } from '../shared/slidesize';
 import { pxToMm } from '../shared/units';
@@ -61,7 +61,6 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     slideWPt: 0,
     slideHPt: 0,
     ptPerPx: 1,
-    sizes: [],
   };
 
   // 선택이 비어 있는 건 오류가 아니라 시작 상태다.
@@ -70,15 +69,8 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     return base;
   }
 
-  // 크기별로 묶는다 — 하나로 모이지 않으면 내보낼 수 없다.
-  const groups = new Map<string, SizeInfo>();
-  for (const f of frames) {
-    const key = sizeKey(f);
-    const g = groups.get(key);
-    if (g) g.count += 1;
-    else groups.set(key, { w: f.width, h: f.height, count: 1 });
-  }
-  const sizes = Array.from(groups.values()).sort((a, b) => b.count - a.count);
+  // 크기가 몇 종류인지만 센다 — 하나로 모이지 않으면 내보낼 수 없다.
+  const distinctSizes = new Set(frames.map(sizeKey)).size;
 
   const { width, height } = frames[0];
   const plan = resolveSlide(width, height);
@@ -90,15 +82,11 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
     slideWPt: plan?.wPt ?? width,
     slideHPt: plan?.hPt ?? height,
     ptPerPx: plan?.ptPerPx ?? 1,
-    sizes,
   };
 
-  if (sizes.length > 1) {
+  if (distinctSizes > 1) {
     // PPTX 는 파일 하나에 슬라이드 크기가 하나뿐이다. 섞이면 어느 쪽도 원본 비율을 지킬 수 없다.
-    const list = sizes
-      .map((s) => t().sizeEntry(fmt(s.w), fmt(s.h), s.count))
-      .join(', ');
-    return { ...state, reason: t().mixedSizes(sizes.length, list) };
+    return { ...state, reason: t().mixedSizes(distinctSizes) };
   }
 
   const rotated = frames.filter((f) => 'rotation' in f && Math.abs(f.rotation) > 0.01);
@@ -109,11 +97,9 @@ export function validate(selection: readonly SceneNode[]): SelectionState {
   // resolveSlide() 가 PowerPoint 한계(1~56인치)를 이미 본다.
   // 실측이 한계를 넘더라도 비율이 맞는 표준 크기가 있으면 그쪽으로 내보낼 수 있다.
   if (!plan) {
-    const mm = `${fmt(pxToMm(width))}×${fmt(pxToMm(height))}mm`;
-    const shortest = Math.min(width, height);
     return {
       ...state,
-      reason: shortest / 72 < 1 ? t().tooSmall(mm) : t().tooLarge(mm),
+      reason: t().sizeOutOfRange(`${fmt(pxToMm(width))}×${fmt(pxToMm(height))}mm`),
     };
   }
 

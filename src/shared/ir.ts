@@ -165,12 +165,6 @@ export interface Doc {
 
 /* ── main ↔ ui 메시지 ─────────────────────────────────────────── */
 
-export interface SizeInfo {
-  w: number;
-  h: number;
-  count: number;
-}
-
 export interface SelectionState {
   /** export 가능 여부 — 프레임이 1개 이상이고 크기가 전부 같을 때만 true */
   ok: boolean;
@@ -186,8 +180,6 @@ export interface SelectionState {
   slideHPt: number;
   /** 적용될 균등 배율. 1 이면 실측. */
   ptPerPx: number;
-  /** 크기가 섞여 있을 때 각 크기별 개수 */
-  sizes: SizeInfo[];
 }
 
 export type MainToUi =
