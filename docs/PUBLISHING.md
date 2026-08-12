@@ -68,13 +68,24 @@ Figma 는 게시 시점의 **빌드 결과물**(`dist/code.js`, `dist/ui.html`)�
 
 ### 3. 에셋
 
-| 항목 | 규격 | 비고 |
+| 항목 | 규격 | 상태 |
 |---|---|---|
-| 아이콘 | 128×128 PNG | `docs/assets/icon.svg` 를 128×128 로 내보내기 |
-| 커버 아트 | 1920×960 PNG (2:1) | `docs/assets/cover.svg` 를 1920×960 으로 내보내기 |
+| 아이콘 | 128×128 PNG | **준비됨** — `docs/assets/icon-128.png` 그대로 업로드 |
+| 커버 아트 | 1920×960 PNG (2:1) | 초안 `docs/assets/cover.svg` 를 Figma 에서 다듬어 내보내기 |
 
 manifest 가 아니라 **게시 모달에서 업로드**한다.
-SVG 는 초안이므로 Figma 에서 열어 다듬은 뒤 PNG 로 내보내면 된다.
+
+아이콘 PNG 는 `docs/assets/icon.svg` 와 같은 도형을 직접 래스터화해서 만든다.
+
+```powershell
+npm.cmd run icon
+```
+
+도형이 둥근 사각형 세 개뿐이라 SVG 렌더링 의존성을 들이는 대신
+`tools/make-icon.mjs` 가 4×4 슈퍼샘플링으로 직접 그린다.
+좌표를 바꾸려면 `icon.svg` 와 `make-icon.mjs` 의 `SHAPES` 를 **둘 다** 고쳐야 한다.
+
+커버는 텍스트가 들어가 폰트가 필요하므로 Figma 에서 마무리한다.
 
 ---
 
@@ -97,16 +108,16 @@ Innodep Export
 
 ### 한 줄 설명 (tagline)
 
-영문:
+100자 제한. 스토어 안이라 "Figma" 를 빼도 frames 만으로 통하고, 브랜드 가이드라인 리스크도 준다.
 
 ```
-Export Figma frames to PPTX at their true size — A4 stays A4, and every shape stays editable.
+Export frames to PPTX at their true size — A4 stays A4, shapes stay editable.
 ```
 
-한국어:
+한국어 (Figma 는 tagline 을 하나만 받으므로 참고용):
 
 ```
-Figma 프레임을 실제 크기 그대로 PPTX 로. A4 는 A4 로 나오고, 도형은 편집 가능한 상태로 남습니다.
+프레임을 실제 크기 그대로 PPTX 로. A4 는 A4 로, 도형은 편집 가능하게.
 ```
 
 ### 상세 설명
