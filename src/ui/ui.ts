@@ -70,18 +70,27 @@ function renderSelection(s: SelectionState): void {
   }
 
   if (!busy) elExport.disabled = !s.ok;
+
+  syncHeight();
 }
 
 function renderWarnings(doc: Doc): void {
   if (doc.warnings.length === 0) {
     elWarnings.classList.add('hidden');
-    return;
+  } else {
+    const items = doc.warnings
+      .map((w) => `<li><b>${escapeHtml(w.slide)} › ${escapeHtml(w.node)}</b><br>${escapeHtml(w.message)}</li>`)
+      .join('');
+    elWarnings.innerHTML = `<h1>${t().warningsTitle(doc.warnings.length)}</h1><ul>${items}</ul>`;
+    elWarnings.classList.remove('hidden');
   }
-  const items = doc.warnings
-    .map((w) => `<li><b>${escapeHtml(w.slide)} › ${escapeHtml(w.node)}</b><br>${escapeHtml(w.message)}</li>`)
-    .join('');
-  elWarnings.innerHTML = `<h1>${t().warningsTitle(doc.warnings.length)}</h1><ul>${items}</ul>`;
-  elWarnings.classList.remove('hidden');
+  syncHeight();
+}
+
+function showBlocked(message: string): void {
+  elBlocked.textContent = message;
+  elBlocked.classList.remove('hidden');
+  syncHeight();
 }
 
 function escapeHtml(s: string): string {
@@ -103,14 +112,34 @@ function download(blob: Blob, fileName: string): void {
 
 /**
  * 창 높이를 내용에 맞춘다.
- * 드롭다운 목록은 absolute 라 body 높이에 안 잡히므로 따로 더해줘야 잘리지 않는다.
+ *
+ * body 박스 높이를 그대로 쓰지 않는다. 오류 박스가 사라져 내용이 줄어도 body 가 따라 줄지 않아
+ * 창 아래에 빈 공간이 남는 경우가 있었다. 보이는 자식들의 실제 아래 끝을 재면 늘어날 때도
+ * 줄어들 때도 같은 값이 나온다.
+ *
+ * 드롭다운 목록은 absolute 라 어느 자식의 박스에도 안 잡히므로 따로 더한다.
  */
-function syncHeight(): void {
-  const body = document.body.getBoundingClientRect().height;
+function contentHeight(): number {
+  const padBottom = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
+  let bottom = 0;
+  for (const child of Array.from(document.body.children)) {
+    const rect = child.getBoundingClientRect();
+    // display:none 인 요소와 <script> 는 크기가 0 이라 자연히 걸러진다.
+    if (rect.height === 0 && rect.width === 0) continue;
+    bottom = Math.max(bottom, rect.bottom);
+  }
   const menuBottom = dpi?.menuBottom();
-  const height = menuBottom === null || menuBottom === undefined
-    ? body
-    : Math.max(body, menuBottom + 12);
+  if (menuBottom != null) bottom = Math.max(bottom, menuBottom);
+  return bottom + padBottom;
+}
+
+let lastHeight = -1;
+
+function syncHeight(): void {
+  const height = contentHeight();
+  // 같은 값을 반복해서 보내지 않는다. ResizeObserver 와 명시 호출이 겹칠 수 있다.
+  if (Math.abs(height - lastHeight) < 0.5) return;
+  lastHeight = height;
   toMain({ type: 'resize', height });
 }
 
@@ -140,7 +169,10 @@ elExport.addEventListener('click', () => {
   elExport.disabled = true;
   dpi.setDisabled(true);
   elExport.textContent = t().reading(0, 0);
+  // 지난 시도의 오류와 경고는 새로 시작할 때 치운다 — 남겨두면 창만 계속 길어진다.
   elWarnings.classList.add('hidden');
+  elBlocked.classList.add('hidden');
+  syncHeight();
   toMain({ type: 'export', imageDpi: dpi.value });
 });
 
@@ -167,8 +199,7 @@ window.onmessage = async (event: MessageEvent) => {
 
   if (msg.type === 'error') {
     finish();
-    elBlocked.textContent = msg.message;
-    elBlocked.classList.remove('hidden');
+    showBlocked(msg.message);
     toMain({ type: 'notify', message: msg.message, error: true });
     return;
   }
@@ -182,8 +213,7 @@ window.onmessage = async (event: MessageEvent) => {
       const size = `${fmt(ptToMm(msg.doc.slideWPt))} × ${fmt(ptToMm(msg.doc.slideHPt))} mm`;
       toMain({ type: 'notify', message: t().exported(msg.doc.slides.length, size) });
     } catch (err) {
-      elBlocked.textContent = t().buildFailed(String(err));
-      elBlocked.classList.remove('hidden');
+      showBlocked(t().buildFailed(String(err)));
       toMain({ type: 'notify', message: t().exportFailed, error: true });
     } finally {
       finish();
