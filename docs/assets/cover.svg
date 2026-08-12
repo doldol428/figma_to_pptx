@@ -1,0 +1,56 @@
+<!--
+  커버 아트 초안 — 1920×960 PNG (2:1) 로 내보내서 게시 모달에 업로드한다.
+
+  전달할 메시지는 하나: 들어간 비율 그대로 나온다.
+  그래서 A4 → 16:9 가 아니라 A4 → A4 를 보여준다.
+
+  텍스트는 Figma 에서 실제 폰트로 다시 앉히는 편이 낫다. SVG 폰트 지정은
+  내보내는 환경에 따라 다르게 렌더된다.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="960" viewBox="0 0 1920 960">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0A1628"/>
+      <stop offset="100%" stop-color="#12243D"/>
+    </linearGradient>
+    <style>
+      .title { font: 700 92px Inter, Pretendard, "Malgun Gothic", sans-serif; fill: #FFFFFF; }
+      .lead  { font: 400 38px Inter, Pretendard, "Malgun Gothic", sans-serif; fill: #93A9C6; }
+      .dim   { font: 600 30px Inter, "Malgun Gothic", sans-serif; fill: #0D99FF;
+               letter-spacing: 1px; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="960" fill="url(#bg)"/>
+
+  <!-- 왼쪽: 이름과 한 줄 설명 -->
+  <text class="title" x="120" y="420">Innodep Export</text>
+  <text class="lead" x="120" y="500">Figma frames to PPTX at their true size.</text>
+  <text class="lead" x="120" y="556">A4 stays A4. Shapes stay editable.</text>
+
+  <!-- 오른쪽: 같은 비율이 그대로 나온다는 것만 보여준다 -->
+  <g>
+    <!-- Figma 프레임 -->
+    <rect x="1108" y="256" width="260" height="368" rx="8" fill="#FFFFFF"/>
+    <rect x="1140" y="296" width="196" height="18" rx="4" fill="#C9D6E5"/>
+    <rect x="1140" y="330" width="150" height="12" rx="4" fill="#E1E8F0"/>
+    <rect x="1140" y="378" width="196" height="110" rx="6" fill="#EDF2F7"/>
+    <rect x="1140" y="512" width="196" height="12" rx="4" fill="#E1E8F0"/>
+    <rect x="1140" y="538" width="128" height="12" rx="4" fill="#E1E8F0"/>
+
+    <!-- 화살표 -->
+    <path d="M1420 440 h58 m-14 -13 l14 13 -14 13"
+          stroke="#0D99FF" stroke-width="7" fill="none"
+          stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- PPTX 슬라이드 — 같은 260×368 -->
+    <rect x="1532" y="256" width="260" height="368" rx="8" fill="#FFFFFF"/>
+    <rect x="1564" y="296" width="196" height="18" rx="4" fill="#C9D6E5"/>
+    <rect x="1564" y="330" width="150" height="12" rx="4" fill="#E1E8F0"/>
+    <rect x="1564" y="378" width="196" height="110" rx="6" fill="#EDF2F7"/>
+    <rect x="1564" y="512" width="196" height="12" rx="4" fill="#E1E8F0"/>
+    <rect x="1564" y="538" width="128" height="12" rx="4" fill="#E1E8F0"/>
+
+    <text class="dim" x="1662" y="676" text-anchor="middle">210 × 297 mm</text>
+  </g>
+</svg>

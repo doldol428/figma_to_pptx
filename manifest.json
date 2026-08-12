@@ -1,6 +1,6 @@
 {
-  "name": "Figma → PPTX",
-  "id": "figma-to-pptx-truesize",
+  "name": "Innodep Export",
+  "id": "innodep-export-dev",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",

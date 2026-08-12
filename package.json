@@ -1,6 +1,6 @@
 {
-  "name": "figma-to-pptx",
-  "version": "0.1.0",
+  "name": "innodep-export",
+  "version": "1.0.0",
   "description": "Figma 프레임을 원본 물리 크기 그대로 PPTX 로 내보내는 플러그인 (1px = 1pt, 네이티브 도형 변환)",
   "private": true,
   "scripts": {
