@@ -105,11 +105,28 @@ class FontBook {
   private readonly failed = new Set<string>();
   private fallback: FontName = { family: 'Inter', style: 'Regular' };
 
+  /**
+   * 쓸 폰트를 미리 로드한다.
+   *
+   * 후보마다 loadFontAsync 를 시도하고 실패를 잡아내는 방식은 쓰지 않는다.
+   * 폰트 25종 × 4스타일이면 왕복이 100번이라 플러그인이 멈춘 것처럼 보인다.
+   * 설치된 목록을 한 번만 받아 존재하는 것만 실제로 로드한다.
+   */
   async load(families: string[]): Promise<void> {
+    const available = new Set<string>();
+    try {
+      for (const f of await figma.listAvailableFontsAsync()) {
+        available.add(`${f.fontName.family}|${f.fontName.style}`);
+      }
+    } catch {
+      // 목록을 못 받으면 아래 로드가 실패하며 대체 폰트로 떨어진다.
+    }
+
     for (const candidate of [
       { family: 'Inter', style: 'Regular' },
       { family: 'Roboto', style: 'Regular' },
     ]) {
+      if (available.size > 0 && !available.has(`${candidate.family}|${candidate.style}`)) continue;
       try {
         await figma.loadFontAsync(candidate);
         this.fallback = candidate;
@@ -120,25 +137,28 @@ class FontBook {
     }
 
     const styles = ['Regular', 'Bold', 'Italic', 'Bold Italic'];
+    const wanted: FontName[] = [];
     for (const family of families) {
       for (const style of styles) {
-        await this.try({ family, style });
+        const key = `${family}|${style}`;
+        if (available.size > 0 && !available.has(key)) {
+          this.failed.add(key);
+          continue;
+        }
+        wanted.push({ family, style });
       }
     }
-  }
 
-  private async try(font: FontName): Promise<boolean> {
-    const key = `${font.family}|${font.style}`;
-    if (this.ok.has(key)) return true;
-    if (this.failed.has(key)) return false;
-    try {
-      await figma.loadFontAsync(font);
-      this.ok.add(key);
-      return true;
-    } catch {
-      this.failed.add(key);
-      return false;
-    }
+    // 존재가 확인된 것만 로드한다. 병렬로 보내면 58장짜리도 체감 지연이 없다.
+    await Promise.all(wanted.map(async (font) => {
+      const key = `${font.family}|${font.style}`;
+      try {
+        await figma.loadFontAsync(font);
+        this.ok.add(key);
+      } catch {
+        this.failed.add(key);
+      }
+    }));
   }
 
   /** 쓸 수 있는 가장 가까운 폰트를 돌려준다 */

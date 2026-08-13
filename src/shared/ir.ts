@@ -187,7 +187,13 @@ export type MainToUi =
   | { type: 'selection'; state: SelectionState }
   | { type: 'progress'; done: number; total: number }
   | { type: 'doc'; doc: Doc; fileName: string }
-  /** 가져오기 진행 — 노드 생성은 main 스레드가 한다 */
+  /**
+   * 가져오기 준비 완료. UI 는 이 신호를 받고서야 첫 슬라이드를 보낸다.
+   * Figma 는 async 핸들러를 기다려주지 않으므로, 확인 없이 연달아 보내면
+   * 세션이 만들어지기 전에 도착해 전부 버려진다.
+   */
+  | { type: 'importReady' }
+  /** 슬라이드 한 장 처리 완료 — UI 는 이걸 받고 다음 장을 보낸다 */
   | { type: 'createProgress'; done: number; total: number }
   | { type: 'imported'; slides: number; missingFonts: string[] }
   | { type: 'error'; message: string };

@@ -1,4 +1,5 @@
 import { readPptx } from '../import/reader';
+import type { ImportDoc } from '../shared/importir';
 import { resolveLocale, setLocale, t } from '../shared/i18n';
 import type { MainToUi, SelectionState, UiToMain, Warning } from '../shared/ir';
 import { ptToMm } from '../shared/units';
@@ -105,6 +106,11 @@ async function runImport(file: File): Promise<void> {
       },
     });
 
+    pending = doc;
+    nextSlide = 0;
+    pendingWarnings = doc.warnings;
+    elPick.textContent = t().creating(0, doc.slides.length);
+
     toMain({
       type: 'importBegin',
       widthPt: doc.widthPt,
@@ -113,22 +119,43 @@ async function runImport(file: File): Promise<void> {
       total: doc.slides.length,
       fonts: doc.fonts,
     });
-    // 한 장씩 보낸다. 이미지가 base64 로 부푼 문서를 한 번에 넘기면 postMessage 가 죽는다.
-    for (let i = 0; i < doc.slides.length; i++) {
-      toMain({ type: 'importSlide', index: i, slide: doc.slides[i] });
-    }
-    toMain({ type: 'importEnd' });
-
-    pendingWarnings = doc.warnings;
+    // 여기서 슬라이드를 바로 보내면 안 된다 — main 이 세션을 만들기 전에 도착해 버려진다.
+    // importReady 를 받고 한 장씩, 처리 확인을 받아가며 보낸다.
   } catch (err) {
-    busy = false;
-    elPick.disabled = false;
-    elPick.textContent = t().pickFile;
+    resetImport();
     showBlocked(t().importFailed(String(err)));
   }
 }
 
 let pendingWarnings: Warning[] = [];
+let pending: ImportDoc | null = null;
+let nextSlide = 0;
+
+/**
+ * 다음 슬라이드 한 장을 보낸다.
+ *
+ * 58장을 한꺼번에 밀어 넣으면 이미지가 base64 로 부푼 만큼(실측 115MB) 다리가 막힌다.
+ * 보낸 장은 즉시 비워 메모리도 같이 놓아준다.
+ */
+function sendNextSlide(): void {
+  if (!pending) return;
+  if (nextSlide >= pending.slides.length) {
+    toMain({ type: 'importEnd' });
+    return;
+  }
+  const index = nextSlide++;
+  const slide = pending.slides[index];
+  toMain({ type: 'importSlide', index, slide });
+  pending.slides[index] = { name: slide.name, nodes: [] };
+}
+
+function resetImport(): void {
+  busy = false;
+  pending = null;
+  nextSlide = 0;
+  elPick.disabled = false;
+  elPick.textContent = t().pickFile;
+}
 
 function renderSelection(s: SelectionState): void {
   state = s;
@@ -284,15 +311,19 @@ window.onmessage = async (event: MessageEvent) => {
     return;
   }
 
+  if (msg.type === 'importReady') {
+    sendNextSlide();
+    return;
+  }
+
   if (msg.type === 'createProgress') {
     elPick.textContent = t().creating(msg.done, msg.total);
+    sendNextSlide();
     return;
   }
 
   if (msg.type === 'imported') {
-    busy = false;
-    elPick.disabled = false;
-    elPick.textContent = t().pickFile;
+    resetImport();
     const warnings = pendingWarnings.slice();
     if (msg.missingFonts.length > 0) {
       warnings.unshift({
@@ -309,8 +340,7 @@ window.onmessage = async (event: MessageEvent) => {
 
   if (msg.type === 'error') {
     finish();
-    elPick.disabled = false;
-    elPick.textContent = t().pickFile;
+    resetImport();
     showBlocked(msg.message);
     toMain({ type: 'notify', message: msg.message, error: true });
     return;

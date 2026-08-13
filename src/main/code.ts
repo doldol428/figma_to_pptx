@@ -22,7 +22,18 @@ figma.on('selectionchange', sendSelection);
 /** 진행 중인 가져오기. 슬라이드가 한 장씩 오므로 상태를 들고 있어야 한다. */
 let session: ImportSession | null = null;
 
-figma.ui.onmessage = async (msg: UiToMain) => {
+/*
+ * Figma 는 async 핸들러가 끝나기를 기다리지 않고 다음 메시지를 던진다.
+ * 처리를 직렬화해 두지 않으면 가져오기처럼 상태를 쌓아가는 흐름이 순서를 잃는다.
+ */
+let queue: Promise<void> = Promise.resolve();
+figma.ui.onmessage = (msg: UiToMain): void => {
+  queue = queue.then(() => handle(msg)).catch((err) => {
+    post({ type: 'error', message: String(err) });
+  });
+};
+
+const handle = async (msg: UiToMain): Promise<void> => {
   if (msg.type === 'ready') {
     // 로케일은 UI 만 알 수 있다 (navigator.languages). 선택 상태를 만들기 전에 먼저 심는다.
     setLocale(msg.locale);
@@ -43,6 +54,7 @@ figma.ui.onmessage = async (msg: UiToMain) => {
   if (msg.type === 'importBegin') {
     try {
       session = await ImportSession.begin(msg);
+      post({ type: 'importReady' });
     } catch (err) {
       session = null;
       post({ type: 'error', message: t().importFailed(String(err)) });
