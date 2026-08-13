@@ -538,7 +538,15 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
   // 첫 문단 기준으로 노드 전체에 건다. 문단마다 다른 경우는 reader 가 경고로 남긴다.
   text.textAlignHorizontal = spec.paragraphs[0]?.align ?? 'LEFT';
   text.textAlignVertical = spec.vertical;
-  text.textAutoResize = spec.autoWidth ? 'WIDTH_AND_HEIGHT' : 'NONE';
+  /*
+   * 상자 크기는 언제나 원본 값을 쓴다.
+   *
+   * PPTX 의 wrap="none" + spAutoFit 상자는 PowerPoint 가 **진짜 폰트로** 계산해 저장해 둔
+   * 크기다. Figma 자동 크기에 맡기면 대체 폰트 폭으로 다시 재면서 상자가 커지고,
+   * 오른쪽 정렬 머리글이 페이지 여백을 넘어간다. 폰트가 달라 줄바꿈은 어차피 어긋나지만,
+   * 위치와 여백만은 원본을 지키는 편이 낫다.
+   */
+  text.textAutoResize = 'NONE';
 
   // 상자 여백만큼 안쪽으로 들여 배치한다. Figma 텍스트에는 내부 여백이 없다.
   const place: Placement = {
@@ -548,7 +556,7 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
     w: Math.max(1, spec.place.w - spec.insets.left - spec.insets.right),
     h: Math.max(1, spec.place.h - spec.insets.top - spec.insets.bottom),
   };
-  if (!spec.autoWidth) resize(text, place);
+  resize(text, place);
   applyPlacement(text, place);
   text.opacity = spec.opacity;
   return text;
