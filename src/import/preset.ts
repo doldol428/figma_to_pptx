@@ -208,11 +208,11 @@ export function presetPath(
       return solid(M(w / 2, 0) + L(w, h / 2) + L(w / 2, h) + L(0, h / 2) + Z);
     case 'parallelogram':
     case 'flowChartInputOutput': {
-      const t = w * a('adj', 25000);
+      const t = Math.min(w, mn * a('adj', 25000));
       return solid(M(t, 0) + L(w, 0) + L(w - t, h) + L(0, h) + Z);
     }
     case 'trapezoid': {
-      const t = w * a('adj', 25000);
+      const t = Math.min(w / 2, mn * a('adj', 25000));
       return solid(M(t, 0) + L(w - t, 0) + L(w, h) + L(0, h) + Z);
     }
     case 'pentagon':
@@ -244,47 +244,52 @@ export function presetPath(
       return solid(star(w, h, 12, 0.79));
 
     /* ── 화살표 ──────────────────────────────────────────────── */
+    /*
+     * 화살표: 꼬리 두께는 폭 방향 변의 비율, 머리 길이는 짧은 변(ss) 기준이다.
+     * 머리를 긴 변으로 잡으면 납작한 화살표에서 머리가 도형을 통째로 삼킨다.
+     */
     case 'rightArrow': {
       const t = h * a('adj1', 50000);
-      const head = Math.min(w, w * a('adj2', 50000));
+      const head = Math.min(w, mn * a('adj2', 50000));
       const y0 = (h - t) / 2;
       return solid(M(0, y0) + L(w - head, y0) + L(w - head, 0) + L(w, h / 2)
         + L(w - head, h) + L(w - head, y0 + t) + L(0, y0 + t) + Z);
     }
     case 'leftArrow': {
       const t = h * a('adj1', 50000);
-      const head = Math.min(w, w * a('adj2', 50000));
+      const head = Math.min(w, mn * a('adj2', 50000));
       const y0 = (h - t) / 2;
       return solid(M(w, y0) + L(head, y0) + L(head, 0) + L(0, h / 2)
         + L(head, h) + L(head, y0 + t) + L(w, y0 + t) + Z);
     }
     case 'upArrow': {
       const t = w * a('adj1', 50000);
-      const head = Math.min(h, h * a('adj2', 50000));
+      const head = Math.min(h, mn * a('adj2', 50000));
       const x0 = (w - t) / 2;
       return solid(M(x0, h) + L(x0, head) + L(0, head) + L(w / 2, 0)
         + L(w, head) + L(x0 + t, head) + L(x0 + t, h) + Z);
     }
     case 'downArrow': {
       const t = w * a('adj1', 50000);
-      const head = Math.min(h, h * a('adj2', 50000));
+      const head = Math.min(h, mn * a('adj2', 50000));
       const x0 = (w - t) / 2;
       return solid(M(x0, 0) + L(x0, h - head) + L(0, h - head) + L(w / 2, h)
         + L(w, h - head) + L(x0 + t, h - head) + L(x0 + t, 0) + Z);
     }
     case 'leftRightArrow': {
       const t = h * a('adj1', 50000);
-      const head = Math.min(w / 2, w * a('adj2', 25000));
+      const head = Math.min(w / 2, mn * a('adj2', 25000));
       const y0 = (h - t) / 2;
       return solid(M(0, h / 2) + L(head, 0) + L(head, y0) + L(w - head, y0) + L(w - head, 0)
         + L(w, h / 2) + L(w - head, h) + L(w - head, y0 + t) + L(head, y0 + t) + L(head, h) + Z);
     }
-    case 'chevron':
     case 'homePlate': {
-      const t = Math.min(w, w * a('adj', 50000)) * (prst === 'chevron' ? 1 : 1);
-      if (prst === 'homePlate') {
-        return solid(M(0, 0) + L(w - t, 0) + L(w, h / 2) + L(w - t, h) + L(0, h) + Z);
-      }
+      // 화살표 머리 길이는 짧은 변 기준이다. 너비로 잡으면 납작한 도형에서 몇 배로 깊어진다.
+      const t = Math.min(w, mn * a('adj', 16667));
+      return solid(M(0, 0) + L(w - t, 0) + L(w, h / 2) + L(w - t, h) + L(0, h) + Z);
+    }
+    case 'chevron': {
+      const t = Math.min(w / 2, mn * a('adj', 50000));
       return solid(M(0, 0) + L(w - t, 0) + L(w, h / 2) + L(w - t, h) + L(0, h) + L(t, h / 2) + Z);
     }
 
@@ -335,8 +340,8 @@ export function presetPath(
       return solid(M(0, 0) + L(w, 0) + L(w - t1, t2) + L(t1, t2) + L(t1, h) + L(0, h) + Z);
     }
     case 'corner': {
-      const t1 = h * a('adj1', 50000);
-      const t2 = w * a('adj2', 50000);
+      const t1 = Math.min(h, mn * a('adj1', 50000));
+      const t2 = Math.min(w, mn * a('adj2', 50000));
       return solid(M(0, 0) + L(t2, 0) + L(t2, h - t1) + L(w, h - t1) + L(w, h) + L(0, h) + Z);
     }
     case 'plaque': {
@@ -455,7 +460,7 @@ export function presetPath(
     /* ── 상하 화살표 · 굽은 화살표 ───────────────────────────── */
     case 'upDownArrow': {
       const t = w * a('adj1', 50000);
-      const head = Math.min(h / 2, h * a('adj2', 25000));
+      const head = Math.min(h / 2, mn * a('adj2', 25000));
       const x0 = (w - t) / 2;
       return solid(M(w / 2, 0) + L(w, head) + L(x0 + t, head) + L(x0 + t, h - head) + L(w, h - head)
         + L(w / 2, h) + L(0, h - head) + L(x0, h - head) + L(x0, head) + L(0, head) + Z);
