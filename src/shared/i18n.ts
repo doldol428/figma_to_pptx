@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 한국어 / 영어 2개 언어만 지원한다. 그 외 언어는 전부 영어로 떨어진다.
  *
  * 주의: Figma 플러그인 API 에는 **계정 언어를 읽는 수단이 없다.** PluginAPI 에 locale 속성이
@@ -29,7 +29,6 @@ export interface Strings {
   dpiDefault: string;
   dpiPrint: string;
   exportButton: string;
-  reading: (done: number, total: number) => string;
   building: string;
   warningsTitle: (n: number) => string;
   buildFailed: (err: string) => string;
@@ -46,6 +45,20 @@ export interface Strings {
   sizeOutOfRange: (mm: string) => string;
   noSlideSize: string;
   conversionError: (err: string) => string;
+
+  /* 가져오기 */
+  tabExport: string;
+  tabImport: string;
+  pickFile: string;
+  dropHint: string;
+  reading: (done: number, total: number) => string;
+  parsing: string;
+  creating: (done: number, total: number) => string;
+  imported: (slides: number) => string;
+  importFailed: (err: string) => string;
+  notPptx: string;
+  fontsMissing: (families: string) => string;
+  mixedAlign: string;
 
   /* 변환 경고 */
   scopeAll: string;
@@ -81,8 +94,21 @@ const KO: Strings = {
   dpiDefault: '기본',
   dpiPrint: '인쇄',
   exportButton: 'PPTX 내보내기',
-  reading: (done, total) => `읽는 중… ${done}/${total}`,
   building: '만드는 중…',
+
+  tabExport: 'PPTX 로 내보내기',
+  tabImport: 'PPTX 가져오기',
+  pickFile: 'PPTX 파일 선택',
+  dropHint: '슬라이드가 프레임으로 들어옵니다',
+  reading: (done, total) => `읽는 중… ${done}/${total}`,
+  parsing: '파일 분석 중…',
+  creating: (done, total) => `프레임 만드는 중… ${done}/${total}`,
+  imported: (slides) => `슬라이드 ${slides}장을 가져왔습니다`,
+  importFailed: (err) => `가져오기 실패: ${err}`,
+  notPptx: '.pptx 파일만 가져올 수 있습니다',
+  fontsMissing: (families) =>
+    `이 컴퓨터에 없는 폰트는 대체했습니다: ${families}`,
+  mixedAlign: '문단마다 가로 정렬이 달라 첫 문단 기준으로 맞췄습니다. Figma 텍스트는 정렬이 상자 단위입니다.',
   warningsTitle: (n) => `변환 참고 ${n}건`,
   buildFailed: (err) => `PPTX 생성 실패: ${err}`,
   exported: (slides, size) => `슬라이드 ${slides}장 · ${size}`,
@@ -133,8 +159,20 @@ const EN: Strings = {
   dpiDefault: 'Default',
   dpiPrint: 'Print',
   exportButton: 'Export PPTX',
-  reading: (done, total) => `Reading… ${done}/${total}`,
   building: 'Building…',
+
+  tabExport: 'Export to PPTX',
+  tabImport: 'Import PPTX',
+  pickFile: 'Choose a PPTX file',
+  dropHint: 'Slides come in as frames',
+  reading: (done, total) => `Reading… ${done}/${total}`,
+  parsing: 'Reading the file…',
+  creating: (done, total) => `Creating frames… ${done}/${total}`,
+  imported: (slides) => `${slides === 1 ? '1 slide' : `${slides} slides`} imported`,
+  importFailed: (err) => `Import failed: ${err}`,
+  notPptx: 'Only .pptx files can be imported',
+  fontsMissing: (families) => `Fonts not available here were substituted: ${families}`,
+  mixedAlign: 'Paragraph alignments differed; the first one was applied to the whole box. Figma aligns text per box, not per paragraph.',
   warningsTitle: (n) => (n === 1 ? '1 conversion note' : `${n} conversion notes`),
   buildFailed: (err) => `Could not build the PPTX: ${err}`,
   exported: (slides, size) => `${slides === 1 ? '1 slide' : `${slides} slides`} · ${size}`,

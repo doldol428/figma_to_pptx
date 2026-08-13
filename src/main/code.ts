@@ -1,6 +1,7 @@
 import { setLocale, t } from '../shared/i18n';
 import type { MainToUi, UiToMain } from '../shared/ir';
 import { resolveSlide } from '../shared/slidesize';
+import { ImportSession } from './create';
 import { extract } from './extract';
 import { collectFrames, validate } from './validate';
 
@@ -18,6 +19,9 @@ function sendSelection(): void {
 
 figma.on('selectionchange', sendSelection);
 
+/** 진행 중인 가져오기. 슬라이드가 한 장씩 오므로 상태를 들고 있어야 한다. */
+let session: ImportSession | null = null;
+
 figma.ui.onmessage = async (msg: UiToMain) => {
   if (msg.type === 'ready') {
     // 로케일은 UI 만 알 수 있다 (navigator.languages). 선택 상태를 만들기 전에 먼저 심는다.
@@ -33,6 +37,39 @@ figma.ui.onmessage = async (msg: UiToMain) => {
 
   if (msg.type === 'notify') {
     figma.notify(msg.message, msg.error ? { error: true } : undefined);
+    return;
+  }
+
+  if (msg.type === 'importBegin') {
+    try {
+      session = await ImportSession.begin(msg);
+    } catch (err) {
+      session = null;
+      post({ type: 'error', message: t().importFailed(String(err)) });
+    }
+    return;
+  }
+
+  if (msg.type === 'importSlide') {
+    if (!session) return;
+    try {
+      await session.addSlide(msg.slide, msg.index);
+      post({ type: 'createProgress', done: msg.index + 1, total: session.total });
+    } catch (err) {
+      post({ type: 'error', message: t().importFailed(String(err)) });
+    }
+    return;
+  }
+
+  if (msg.type === 'importEnd') {
+    if (!session) return;
+    const { frames } = session;
+    if (frames.length > 0) {
+      figma.currentPage.selection = frames;
+      figma.viewport.scrollAndZoomIntoView(frames);
+    }
+    post({ type: 'imported', slides: frames.length, missingFonts: session.missingFonts() });
+    session = null;
     return;
   }
 

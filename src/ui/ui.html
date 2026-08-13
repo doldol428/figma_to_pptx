@@ -154,6 +154,32 @@
     color: var(--figma-color-text-tertiary, #999);
   }
 
+  /* 방향 전환 탭 */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    margin-bottom: 10px;
+    border-radius: 7px;
+    background: var(--figma-color-bg-secondary, #f0f0f0);
+  }
+  .tab {
+    flex: 1;
+    height: 26px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--figma-color-text-secondary, #666);
+    font: inherit;
+    cursor: pointer;
+  }
+  .tab[aria-selected="true"] {
+    background: var(--figma-color-bg, #fff);
+    color: var(--figma-color-text, #000);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+  }
+
   #warnings { max-height: 200px; overflow-y: auto; margin: 8px 0 0; }
   #warnings ul { margin: 6px 0 0; padding-left: 16px; }
   #warnings li { margin-bottom: 4px; color: var(--figma-color-text-secondary, #666); }
@@ -163,6 +189,12 @@
 </style>
 </head>
 <body>
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab" id="tabExport" role="tab" aria-selected="true"></button>
+    <button type="button" class="tab" id="tabImport" role="tab" aria-selected="false"></button>
+  </div>
+
+  <div id="paneExport">
   <div class="card">
     <h1 id="slideSizeTitle"></h1>
     <div class="size" id="size">—</div>
@@ -181,6 +213,16 @@
   </div>
 
   <button type="button" class="control primary" id="export" disabled></button>
+  </div>
+
+  <div id="paneImport" class="hidden">
+    <div class="card">
+      <h1 id="importTitle"></h1>
+      <div class="sub" id="importHint"></div>
+    </div>
+    <input type="file" id="file" accept=".pptx" hidden />
+    <button type="button" class="control primary" id="pick"></button>
+  </div>
 
   <div class="card hidden" id="warnings"></div>
 

@@ -10,6 +10,7 @@
  */
 
 import type { Locale } from './i18n';
+import type { ImportDoc } from './importir';
 
 /** "RRGGBB" (샵 없음) */
 export type Hex = string;
@@ -186,12 +187,29 @@ export type MainToUi =
   | { type: 'selection'; state: SelectionState }
   | { type: 'progress'; done: number; total: number }
   | { type: 'doc'; doc: Doc; fileName: string }
+  /** 가져오기 진행 — 노드 생성은 main 스레드가 한다 */
+  | { type: 'createProgress'; done: number; total: number }
+  | { type: 'imported'; slides: number; missingFonts: string[] }
   | { type: 'error'; message: string };
 
 export type UiToMain =
   /** locale 은 UI 만 알 수 있어(navigator.languages) 첫 메시지에 실어 보낸다 */
   | { type: 'ready'; locale: Locale }
   | { type: 'export'; imageDpi: number }
+  /*
+   * 가져오기는 슬라이드를 한 장씩 보낸다.
+   * 100MB 짜리 문서는 이미지가 base64 로 부풀어 한 번에 넘기면 postMessage 가 감당하지 못한다.
+   */
+  | {
+    type: 'importBegin';
+    widthPt: number;
+    heightPt: number;
+    fileName: string;
+    total: number;
+    fonts: string[];
+  }
+  | { type: 'importSlide'; index: number; slide: ImportDoc['slides'][number] }
+  | { type: 'importEnd' }
   /** 내용 높이에 맞춰 플러그인 창을 줄인다 — 경고 목록 유무에 따라 높이가 크게 달라진다 */
   | { type: 'resize'; height: number }
   | { type: 'notify'; message: string; error?: boolean };

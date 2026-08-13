@@ -1,0 +1,713 @@
+import JSZip from 'jszip';
+import { t } from '../shared/i18n';
+import type { Warning } from '../shared/ir';
+import type {
+  ImportDoc, ImportNode, ImportSlide, Paint, Paragraph, Placement, ShapeGeometry,
+  ShadowSpec, StrokeSpec, TableCell, TextRun,
+} from '../shared/importir';
+import { colorNode, readFill, readLinePaint, resolveColorNode, type ColorContext } from './color';
+import { connectorPath, nativeFor, presetPath, readAdjust } from './preset';
+import {
+  IDENTITY, decompose, multiply, placeBox, scale, translate, type Mat,
+} from './transform';
+import { all, bool, deep, num, one, parseXml, path as xpath, type XNode } from './xml';
+
+const EMU_PT = 12700;
+const pt = (emu: number): number => emu / EMU_PT;
+
+/** 텍스트 상자 기본 여백 (EMU) — bodyPr 에 값이 없을 때 PowerPoint 가 쓰는 값 */
+const DEFAULT_INSETS = { l: 91440, t: 45720, r: 91440, b: 45720 };
+
+interface Ctx {
+  zip: JSZip;
+  color: ColorContext;
+  /** 테마 폰트 — `+mj-lt` / `+mn-lt` 참조를 푸는 데 쓴다 */
+  themeFonts: { major: string; minor: string };
+  warn: (slide: string, node: string, message: string) => void;
+  fonts: Set<string>;
+  slideName: string;
+}
+
+export interface ReadOptions {
+  onProgress?: (done: number, total: number) => void;
+}
+
+export async function readPptx(
+  data: ArrayBuffer,
+  fileName: string,
+  opts: ReadOptions = {},
+): Promise<ImportDoc> {
+  const zip = await JSZip.loadAsync(data);
+  const warnings: Warning[] = [];
+  const seen = new Set<string>();
+  const warn = (slide: string, node: string, message: string): void => {
+    const key = `${slide}|${node}|${message}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    warnings.push({ slide, node, message });
+  };
+
+  const presentation = await readXml(zip, 'ppt/presentation.xml');
+  const sldSz = deep(presentation, 'sldSz');
+  const widthPt = pt(num(sldSz?.attrs.cx, 9144000));
+  const heightPt = pt(num(sldSz?.attrs.cy, 6858000));
+
+  const slidePaths = await orderedSlidePaths(zip, presentation);
+
+  // 테마와 색 매핑은 마스터를 거쳐야 한다. 슬라이드 XML 만 읽으면 색이 전부 틀어진다.
+  const master = await readXml(zip, 'ppt/slideMasters/slideMaster1.xml');
+  const clrMapEl = one(master, 'clrMap');
+  const map: Record<string, string> = clrMapEl ? { ...clrMapEl.attrs } : {};
+
+  const theme = await readXml(zip, 'ppt/theme/theme1.xml');
+  const scheme: Record<string, string> = {};
+  for (const c of deep(theme, 'clrScheme')?.children ?? []) {
+    const v = one(c, 'srgbClr')?.attrs.val ?? one(c, 'sysClr')?.attrs.lastClr;
+    if (v) scheme[c.tag] = v;
+  }
+
+  const fontScheme = deep(theme, 'fontScheme');
+  const themeFonts = {
+    major: xpath(fontScheme, 'majorFont', 'latin')?.attrs.typeface || 'Arial',
+    minor: xpath(fontScheme, 'minorFont', 'latin')?.attrs.typeface || 'Arial',
+  };
+
+  const fonts = new Set<string>();
+  const ctx: Ctx = {
+    zip,
+    color: { scheme, map },
+    themeFonts,
+    warn,
+    fonts,
+    slideName: '',
+  };
+
+  const slides: ImportSlide[] = [];
+  for (let i = 0; i < slidePaths.length; i++) {
+    opts.onProgress?.(i, slidePaths.length);
+    const slidePath = slidePaths[i];
+    ctx.slideName = `슬라이드 ${i + 1}`;
+
+    const slideXml = await readXml(zip, slidePath);
+    const rels = await readRels(zip, slidePath);
+    const layout = await layoutFor(zip, rels);
+
+    const tree = deep(slideXml, 'spTree');
+    const nodes: ImportNode[] = [];
+    if (tree) {
+      for (const child of tree.children) {
+        const node = await readNode(child, IDENTITY, ctx, rels, layout);
+        if (node) nodes.push(node);
+      }
+    }
+
+    slides.push({
+      name: `${i + 1}. ${slideTitle(tree) || ctx.slideName}`,
+      fill: readSlideBackground(slideXml, ctx) ?? undefined,
+      nodes,
+    });
+  }
+  opts.onProgress?.(slidePaths.length, slidePaths.length);
+
+  return {
+    widthPt,
+    heightPt,
+    fileName,
+    slides,
+    warnings,
+    fonts: Array.from(fonts).sort(),
+  };
+}
+
+/* ── 패키지 탐색 ──────────────────────────────────────────────── */
+
+async function readXml(zip: JSZip, p: string): Promise<XNode | null> {
+  const file = zip.file(p);
+  if (!file) return null;
+  return parseXml(await file.async('string'));
+}
+
+async function readRels(zip: JSZip, partPath: string): Promise<Record<string, string>> {
+  const slash = partPath.lastIndexOf('/');
+  const relPath = `${partPath.slice(0, slash)}/_rels/${partPath.slice(slash + 1)}.rels`;
+  const xml = await readXml(zip, relPath);
+  const out: Record<string, string> = {};
+  for (const r of deep(xml, 'Relationships')?.children ?? []) {
+    if (r.attrs.Id && r.attrs.Target) out[r.attrs.Id] = r.attrs.Target;
+  }
+  return out;
+}
+
+/** presentation.xml 의 sldIdLst 순서를 rels 로 실제 경로에 대응시킨다 */
+async function orderedSlidePaths(zip: JSZip, presentation: XNode | null): Promise<string[]> {
+  const rels = await readRels(zip, 'ppt/presentation.xml');
+  const ids = all(deep(presentation, 'sldIdLst'), 'sldId');
+  const paths: string[] = [];
+  for (const id of ids) {
+    const target = rels[id.attrs['r:id'] ?? ''];
+    if (target) paths.push(`ppt/${target.replace(/^\.\.\//, '')}`);
+  }
+  if (paths.length > 0) return paths;
+
+  // sldIdLst 를 못 읽으면 파일명 순서로 떨어진다.
+  return Object.keys(zip.files)
+    .filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+    .sort((a, b) => num(/\d+/.exec(a)?.[0]) - num(/\d+/.exec(b)?.[0]));
+}
+
+async function layoutFor(
+  zip: JSZip, rels: Record<string, string>,
+): Promise<XNode | null> {
+  const target = Object.values(rels).find((t) => t.indexOf('slideLayout') >= 0);
+  if (!target) return null;
+  return readXml(zip, `ppt/${target.replace(/^\.\.\//, '')}`);
+}
+
+function slideTitle(tree: XNode | null): string {
+  for (const sp of all(tree, 'sp')) {
+    const ph = deep(xpath(sp, 'nvSpPr', 'nvPr'), 'ph');
+    if (ph?.attrs.type !== 'title' && ph?.attrs.type !== 'ctrTitle') continue;
+    const text = collectText(one(sp, 'txBody'));
+    if (text) return text.slice(0, 40);
+  }
+  return '';
+}
+
+function collectText(txBody: XNode | null): string {
+  if (!txBody) return '';
+  let out = '';
+  for (const p of all(txBody, 'p')) {
+    for (const r of all(p, 'r')) out += one(r, 't')?.text ?? '';
+  }
+  return out.trim();
+}
+
+function readSlideBackground(slide: XNode | null, ctx: Ctx): Paint | null {
+  const bgPr = xpath(deep(slide, 'bg'), 'bgPr');
+  if (!bgPr) return null;
+  const fill = readFill(bgPr, ctx.color);
+  return fill ?? null;
+}
+
+/* ── 노드 ────────────────────────────────────────────────────── */
+
+async function readNode(
+  el: XNode,
+  parent: Mat,
+  ctx: Ctx,
+  rels: Record<string, string>,
+  layout: XNode | null,
+): Promise<ImportNode | null> {
+  switch (el.tag) {
+    case 'sp':
+      return readShape(el, parent, ctx, layout);
+    case 'cxnSp':
+      return readConnector(el, parent, ctx);
+    case 'pic':
+      return readPicture(el, parent, ctx, rels);
+    case 'grpSp':
+      return readGroup(el, parent, ctx, rels, layout);
+    case 'graphicFrame':
+      return readGraphicFrame(el, parent, ctx);
+    default:
+      return null;
+  }
+}
+
+/** spPr 의 xfrm 을 읽어 누적 행렬과 로컬 크기를 만든다 */
+function localMatrix(xfrm: XNode | null): { m: Mat; w: number; h: number } | null {
+  if (!xfrm) return null;
+  const off = one(xfrm, 'off');
+  const ext = one(xfrm, 'ext');
+  if (!off || !ext) return null;
+  const w = num(ext.attrs.cx);
+  const h = num(ext.attrs.cy);
+  return {
+    m: placeBox(
+      num(off.attrs.x), num(off.attrs.y), w, h,
+      num(xfrm.attrs.rot) / 60000,
+      bool(xfrm.attrs.flipH),
+      bool(xfrm.attrs.flipV),
+    ),
+    w,
+    h,
+  };
+}
+
+function placementOf(parent: Mat, local: { m: Mat; w: number; h: number }): Placement {
+  const box = decompose(multiply(parent, local.m), local.w, local.h);
+  return { ...box, x: pt(box.x), y: pt(box.y), w: pt(box.w), h: pt(box.h) };
+}
+
+/**
+ * 도형의 xfrm 이 없으면 레이아웃의 같은 placeholder 에서 가져온다.
+ * 제목·본문 자리표시자는 슬라이드에 위치를 안 적는 경우가 많다.
+ */
+function inheritedXfrm(sp: XNode, layout: XNode | null): XNode | null {
+  const ph = deep(xpath(sp, 'nvSpPr', 'nvPr'), 'ph');
+  if (!ph || !layout) return null;
+  const idx = ph.attrs.idx;
+  const type = ph.attrs.type;
+  for (const cand of all(deep(layout, 'spTree'), 'sp')) {
+    const cph = deep(xpath(cand, 'nvSpPr', 'nvPr'), 'ph');
+    if (!cph) continue;
+    if ((idx !== undefined && cph.attrs.idx === idx)
+      || (type !== undefined && cph.attrs.type === type)) {
+      return xpath(cand, 'spPr', 'xfrm');
+    }
+  }
+  return null;
+}
+
+function readStroke(ln: XNode | null, ctx: Ctx): StrokeSpec | undefined {
+  if (!ln) return undefined;
+  const paint = readLinePaint(ln, ctx.color);
+  if (!paint) return undefined;
+  const width = ln.attrs.w ? pt(num(ln.attrs.w)) : 1;
+  const dashVal = one(ln, 'prstDash')?.attrs.val;
+  const stroke: StrokeSpec = { paint, width };
+  if (dashVal && dashVal !== 'solid') {
+    stroke.dash = dashVal.indexOf('dot') >= 0 ? [width, width * 2] : [width * 4, width * 3];
+  }
+  const cap = ln.attrs.cap;
+  if (cap === 'rnd') stroke.cap = 'ROUND';
+  else if (cap === 'sq') stroke.cap = 'SQUARE';
+  return stroke;
+}
+
+function readShadow(spPr: XNode | null, ctx: Ctx): ShadowSpec | undefined {
+  const outer = deep(one(spPr, 'effectLst'), 'outerShdw');
+  if (!outer) return undefined;
+  const c = resolveColorNode(colorNode(outer), ctx.color);
+  const dist = pt(num(outer.attrs.dist));
+  const dir = num(outer.attrs.dir) / 60000;
+  const rad = (dir * Math.PI) / 180;
+  return {
+    offsetX: Math.round(dist * Math.cos(rad) * 100) / 100,
+    offsetY: Math.round(dist * Math.sin(rad) * 100) / 100,
+    blur: pt(num(outer.attrs.blurRad)),
+    color: c?.color ?? '000000',
+    opacity: c?.opacity ?? 0.3,
+  };
+}
+
+async function readShape(
+  sp: XNode, parent: Mat, ctx: Ctx, layout: XNode | null,
+): Promise<ImportNode | null> {
+  const spPr = one(sp, 'spPr');
+  const local = localMatrix(one(spPr, 'xfrm') ?? inheritedXfrm(sp, layout));
+  if (!local) return null;
+
+  const name = xpath(sp, 'nvSpPr', 'cNvPr')?.attrs.name ?? '도형';
+  const place = placementOf(parent, local);
+  const opacity = 1;
+
+  const prstGeom = one(spPr, 'prstGeom');
+  const custGeom = one(spPr, 'custGeom');
+  const prst = prstGeom?.attrs.prst ?? '';
+  const adj = readAdjust(prstGeom);
+
+  const fill = readFill(spPr, ctx.color) ?? undefined;
+  const stroke = readStroke(one(spPr, 'ln'), ctx);
+  const shadow = readShadow(spPr, ctx);
+
+  const geometry = resolveGeometry(prst, custGeom, place, adj, name, ctx);
+  const children: ImportNode[] = [];
+
+  const hasPaint = !!fill || !!stroke;
+  if (geometry && hasPaint) {
+    const shape: ImportNode = {
+      type: 'shape', name, place, opacity, geometry,
+      ...(fill ? { fill } : {}),
+      ...(stroke ? { stroke } : {}),
+      ...(shadow ? { shadow } : {}),
+    };
+    children.push(shape);
+  }
+
+  const text = readTextBody(one(sp, 'txBody'), place, name, ctx);
+  if (text) children.push(text);
+
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+  // 면과 글자를 함께 가진 도형 — Figma 에는 도형 안의 텍스트가 없으므로 묶어서 낸다.
+  return { type: 'group', name, place, opacity, children };
+}
+
+function resolveGeometry(
+  prst: string,
+  custGeom: XNode | null,
+  place: Placement,
+  adj: Record<string, number>,
+  name: string,
+  ctx: Ctx,
+): ShapeGeometry | null {
+  if (custGeom) {
+    const data = custGeomPath(custGeom, place.w, place.h);
+    if (data) return { kind: 'path', data, evenOdd: false };
+    return { kind: 'rect' };
+  }
+  if (!prst) return { kind: 'rect' };
+
+  const native = nativeFor(prst, place.w, place.h, adj);
+  if (native) return native;
+
+  const preset = presetPath(prst, place.w, place.h, adj);
+  if (preset) return { kind: 'path', data: preset.data, evenOdd: preset.evenOdd };
+
+  const conn = connectorPath(prst, place.w, place.h);
+  if (conn) return { kind: 'path', data: conn.data, evenOdd: false };
+
+  ctx.warn(ctx.slideName, name, `preset 도형 ${prst} 은 아직 지원하지 않아 사각형으로 대체했습니다.`);
+  return { kind: 'rect' };
+}
+
+function custGeomPath(custGeom: XNode, w: number, h: number): string {
+  const pathLst = one(custGeom, 'pathLst');
+  let d = '';
+  for (const p of all(pathLst, 'path')) {
+    const pw = num(p.attrs.w);
+    const ph = num(p.attrs.h);
+    const sx = pw ? w / pw : 1 / EMU_PT;
+    const sy = ph ? h / ph : 1 / EMU_PT;
+    const X = (v: string | undefined): string => (num(v) * sx).toFixed(2);
+    const Y = (v: string | undefined): string => (num(v) * sy).toFixed(2);
+    for (const seg of p.children) {
+      const ps = all(seg, 'pt');
+      switch (seg.tag) {
+        case 'moveTo':
+          d += `M${X(ps[0]?.attrs.x)} ${Y(ps[0]?.attrs.y)} `;
+          break;
+        case 'lnTo':
+          d += `L${X(ps[0]?.attrs.x)} ${Y(ps[0]?.attrs.y)} `;
+          break;
+        case 'cubicBezTo':
+          d += `C${X(ps[0]?.attrs.x)} ${Y(ps[0]?.attrs.y)} ${X(ps[1]?.attrs.x)} ${Y(ps[1]?.attrs.y)} ${X(ps[2]?.attrs.x)} ${Y(ps[2]?.attrs.y)} `;
+          break;
+        case 'quadBezTo':
+          d += `Q${X(ps[0]?.attrs.x)} ${Y(ps[0]?.attrs.y)} ${X(ps[1]?.attrs.x)} ${Y(ps[1]?.attrs.y)} `;
+          break;
+        case 'close':
+          d += 'Z ';
+          break;
+        default:
+          break;
+      }
+    }
+  }
+  return d.trim();
+}
+
+async function readConnector(el: XNode, parent: Mat, ctx: Ctx): Promise<ImportNode | null> {
+  const spPr = one(el, 'spPr');
+  const local = localMatrix(one(spPr, 'xfrm'));
+  if (!local) return null;
+
+  const name = xpath(el, 'nvCxnSpPr', 'cNvPr')?.attrs.name ?? '연결선';
+  const place = placementOf(parent, local);
+  const prst = one(spPr, 'prstGeom')?.attrs.prst ?? 'line';
+
+  const stroke = readStroke(one(spPr, 'ln'), ctx);
+  if (!stroke) return null;
+
+  const conn = connectorPath(prst, place.w, place.h);
+  const geometry: ShapeGeometry = conn
+    ? { kind: 'path', data: conn.data, evenOdd: false }
+    : { kind: 'line' };
+
+  return { type: 'shape', name, place, opacity: 1, geometry, stroke };
+}
+
+async function readGroup(
+  el: XNode, parent: Mat, ctx: Ctx, rels: Record<string, string>, layout: XNode | null,
+): Promise<ImportNode | null> {
+  const grpSpPr = one(el, 'grpSpPr');
+  const xfrm = one(grpSpPr, 'xfrm');
+  if (!xfrm) return null;
+
+  const off = one(xfrm, 'off');
+  const ext = one(xfrm, 'ext');
+  const chOff = one(xfrm, 'chOff');
+  const chExt = one(xfrm, 'chExt');
+  if (!off || !ext) return null;
+
+  const w = num(ext.attrs.cx);
+  const h = num(ext.attrs.cy);
+
+  // 그룹의 배치(회전 포함)를 먼저 세우고, 그 안에서 자식 좌표계를 매핑한다.
+  const placed = placeBox(
+    num(off.attrs.x), num(off.attrs.y), w, h,
+    num(xfrm.attrs.rot) / 60000,
+    bool(xfrm.attrs.flipH),
+    bool(xfrm.attrs.flipV),
+  );
+
+  let inner: Mat = IDENTITY;
+  if (chOff && chExt) {
+    const cw = num(chExt.attrs.cx);
+    const ch = num(chExt.attrs.cy);
+    inner = multiply(
+      scale(cw ? w / cw : 1, ch ? h / ch : 1),
+      translate(-num(chOff.attrs.x), -num(chOff.attrs.y)),
+    );
+  }
+
+  const childMat = multiply(multiply(parent, placed), inner);
+
+  const children: ImportNode[] = [];
+  for (const child of el.children) {
+    const node = await readNode(child, childMat, ctx, rels, layout);
+    if (node) children.push(node);
+  }
+  if (children.length === 0) return null;
+
+  const name = xpath(el, 'nvGrpSpPr', 'cNvPr')?.attrs.name ?? '그룹';
+  const place = placementOf(parent, { m: placed, w, h });
+  return { type: 'group', name, place, opacity: 1, children };
+}
+
+const MIME: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  svg: 'image/svg+xml', bmp: 'image/bmp', tiff: 'image/tiff',
+};
+
+async function readPicture(
+  el: XNode, parent: Mat, ctx: Ctx, rels: Record<string, string>,
+): Promise<ImportNode | null> {
+  const spPr = one(el, 'spPr');
+  const local = localMatrix(one(spPr, 'xfrm'));
+  if (!local) return null;
+
+  const name = xpath(el, 'nvPicPr', 'cNvPr')?.attrs.name ?? '그림';
+  const place = placementOf(parent, local);
+
+  const blip = deep(one(el, 'blipFill'), 'blip');
+  const id = blip?.attrs['r:embed'] ?? blip?.attrs['r:link'];
+  const target = id ? rels[id] : undefined;
+  if (!target) return null;
+
+  const filePath = `ppt/${target.replace(/^\.\.\//, '')}`;
+  const file = ctx.zip.file(filePath);
+  if (!file) return null;
+
+  const ext = (filePath.split('.').pop() ?? '').toLowerCase();
+  const mime = MIME[ext];
+  if (!mime) {
+    // wdp(JPEG XR) · emf/wmf(메타파일) 는 Figma 가 읽지 못한다.
+    ctx.warn(ctx.slideName, name, `.${ext} 이미지는 Figma 가 읽지 못해 건너뛰었습니다.`);
+    return null;
+  }
+
+  const prstGeom = one(spPr, 'prstGeom');
+  const nativeShape = nativeFor(prstGeom?.attrs.prst ?? 'rect', place.w, place.h,
+    readAdjust(prstGeom));
+
+  return {
+    type: 'image',
+    name,
+    place,
+    opacity: 1,
+    data: await file.async('base64'),
+    mime,
+    isSvg: ext === 'svg',
+    ...(nativeShape && nativeShape.kind === 'roundRect' ? { radii: nativeShape.radii } : {}),
+  };
+}
+
+async function readGraphicFrame(el: XNode, parent: Mat, ctx: Ctx): Promise<ImportNode | null> {
+  const local = localMatrix(one(el, 'xfrm'));
+  if (!local) return null;
+
+  const name = xpath(el, 'nvGraphicFramePr', 'cNvPr')?.attrs.name ?? '개체';
+  const place = placementOf(parent, local);
+
+  const tbl = deep(el, 'tbl');
+  if (tbl) return readTable(tbl, name, place, ctx);
+
+  if (deep(el, 'chart')) {
+    ctx.warn(ctx.slideName, name, '차트는 Figma 에 대응 개체가 없어 건너뛰었습니다.');
+  } else if (deep(el, 'relIds')) {
+    ctx.warn(ctx.slideName, name, 'SmartArt 는 Figma 에 대응 개체가 없어 건너뛰었습니다.');
+  }
+  return null;
+}
+
+function readTable(
+  tbl: XNode, name: string, place: Placement, ctx: Ctx,
+): ImportNode {
+  const colWidths = all(one(tbl, 'tblGrid'), 'gridCol').map((g) => pt(num(g.attrs.w)));
+  const rowsXml = all(tbl, 'tr');
+  const rowHeights = rowsXml.map((r) => pt(num(r.attrs.h)));
+
+  const rows: TableCell[][] = rowsXml.map((tr) => all(tr, 'tc').map((tc) => {
+    const tcPr = one(tc, 'tcPr');
+    const fill = readFill(tcPr, ctx.color);
+    const anchor = tcPr?.attrs.anchor;
+    const cell: TableCell = {
+      merged: bool(tc.attrs.hMerge) || bool(tc.attrs.vMerge),
+      rowSpan: num(tc.attrs.rowSpan, 1),
+      colSpan: num(tc.attrs.gridSpan, 1),
+      ...(fill ? { fill } : {}),
+      paragraphs: readParagraphs(one(tc, 'txBody'), ctx),
+      insets: {
+        left: pt(num(tcPr?.attrs.marL, 91440)),
+        top: pt(num(tcPr?.attrs.marT, 45720)),
+        right: pt(num(tcPr?.attrs.marR, 91440)),
+        bottom: pt(num(tcPr?.attrs.marB, 45720)),
+      },
+      vertical: anchor === 'ctr' ? 'CENTER' : anchor === 'b' ? 'BOTTOM' : 'TOP',
+      borders: {
+        top: readStroke(one(tcPr, 'lnT'), ctx),
+        right: readStroke(one(tcPr, 'lnR'), ctx),
+        bottom: readStroke(one(tcPr, 'lnB'), ctx),
+        left: readStroke(one(tcPr, 'lnL'), ctx),
+      },
+    };
+    return cell;
+  }));
+
+  return { type: 'table', name, place, opacity: 1, colWidths, rowHeights, rows };
+}
+
+/* ── 텍스트 ──────────────────────────────────────────────────── */
+
+function readTextBody(
+  txBody: XNode | null, place: Placement, name: string, ctx: Ctx,
+): ImportNode | null {
+  if (!txBody) return null;
+  const paragraphs = readParagraphs(txBody, ctx);
+  if (paragraphs.length === 0) return null;
+
+  // Figma 텍스트는 가로 정렬이 노드 단위다. 문단마다 다르면 첫 문단 기준으로 눌린다.
+  if (paragraphs.some((p) => p.align !== paragraphs[0].align)) {
+    ctx.warn(ctx.slideName, name, t().mixedAlign);
+  }
+
+  const bodyPr = one(txBody, 'bodyPr');
+  const anchor = bodyPr?.attrs.anchor;
+  const spAutoFit = !!one(bodyPr, 'spAutoFit');
+
+  return {
+    type: 'text',
+    name,
+    place,
+    opacity: 1,
+    paragraphs,
+    vertical: anchor === 'ctr' ? 'CENTER' : anchor === 'b' ? 'BOTTOM' : 'TOP',
+    insets: {
+      left: pt(num(bodyPr?.attrs.lIns, DEFAULT_INSETS.l)),
+      top: pt(num(bodyPr?.attrs.tIns, DEFAULT_INSETS.t)),
+      right: pt(num(bodyPr?.attrs.rIns, DEFAULT_INSETS.r)),
+      bottom: pt(num(bodyPr?.attrs.bIns, DEFAULT_INSETS.b)),
+    },
+    autoWidth: bodyPr?.attrs.wrap === 'none' && spAutoFit,
+  };
+}
+
+function readParagraphs(txBody: XNode | null, ctx: Ctx): Paragraph[] {
+  if (!txBody) return [];
+  const out: Paragraph[] = [];
+
+  for (const p of all(txBody, 'p')) {
+    const pPr = one(p, 'pPr');
+    const runs: TextRun[] = [];
+
+    for (const child of p.children) {
+      if (child.tag === 'r') {
+        const run = readRun(child, pPr, ctx);
+        if (run.text) runs.push(run);
+      } else if (child.tag === 'br') {
+        runs.push({ ...readRun(null, pPr, ctx), text: '\n' });
+      } else if (child.tag === 'fld') {
+        // 슬라이드 번호 등 필드 — 마지막으로 계산된 값이 그대로 들어 있다
+        const run = readRun(child, pPr, ctx);
+        if (run.text) runs.push(run);
+      }
+    }
+
+    if (runs.length === 0 && out.length === 0) continue;
+
+    const algn = pPr?.attrs.algn;
+    const para: Paragraph = {
+      runs,
+      align: algn === 'ctr' ? 'CENTER' : algn === 'r' ? 'RIGHT'
+        : algn === 'just' ? 'JUSTIFIED' : 'LEFT',
+      level: num(pPr?.attrs.lvl),
+    };
+
+    const spcPct = xpath(pPr, 'lnSpc', 'spcPct');
+    if (spcPct) para.lineHeightPct = num(spcPct.attrs.val) / 1000;
+    const before = xpath(pPr, 'spcBef', 'spcPts');
+    if (before) para.spaceBefore = num(before.attrs.val) / 100;
+    const after = xpath(pPr, 'spcAft', 'spcPts');
+    if (after) para.spaceAfter = num(after.attrs.val) / 100;
+
+    const buChar = one(pPr, 'buChar');
+    const buNum = one(pPr, 'buAutoNum');
+    if (buChar) para.bullet = { kind: 'char', char: buChar.attrs.char ?? '•' };
+    else if (buNum) para.bullet = { kind: 'number' };
+
+    out.push(para);
+  }
+
+  // 뒤쪽 빈 문단은 버린다
+  while (out.length > 0 && out[out.length - 1].runs.length === 0) out.pop();
+  return out;
+}
+
+function readRun(r: XNode | null, pPr: XNode | null, ctx: Ctx): TextRun {
+  const rPr = r ? one(r, 'rPr') : null;
+  const defRPr = xpath(pPr, 'defRPr');
+  const props = rPr ?? defRPr;
+
+  const size = num(props?.attrs.sz, 1800) / 100;
+  const family = resolveFont(props, ctx);
+  ctx.fonts.add(family);
+
+  let color = '000000';
+  let opacity = 1;
+  const solid = one(props, 'solidFill');
+  if (solid) {
+    const c = resolveColorNode(colorNode(solid), ctx.color);
+    if (c) {
+      color = c.color;
+      opacity = c.opacity;
+    }
+  }
+
+  const bold = bool(props?.attrs.b);
+  const italic = bool(props?.attrs.i);
+  const run: TextRun = {
+    text: r ? (one(r, 't')?.text ?? '') : '',
+    size,
+    fontFamily: family,
+    fontStyle: bold && italic ? 'Bold Italic' : bold ? 'Bold' : italic ? 'Italic' : 'Regular',
+    bold,
+    italic,
+    underline: (props?.attrs.u ?? 'none') !== 'none',
+    strike: (props?.attrs.strike ?? 'noStrike') !== 'noStrike',
+    color,
+    opacity,
+  };
+
+  const spc = props?.attrs.spc;
+  if (spc) run.letterSpacing = num(spc) / 100;
+
+  const link = one(props, 'hlinkClick');
+  if (link?.attrs['r:id']) run.link = link.attrs['r:id'];
+
+  return run;
+}
+
+/** `+mj-lt` / `+mn-lt` 는 테마 폰트 참조다. 한글 문서는 ea(동아시아) 쪽이 실제 폰트인 경우가 많다. */
+function resolveFont(props: XNode | null, ctx: Ctx): string {
+  const candidates = [one(props, 'ea'), one(props, 'latin'), one(props, 'cs')];
+  for (const c of candidates) {
+    const face = c?.attrs.typeface;
+    if (!face) continue;
+    if (face.startsWith('+mj')) return ctx.themeFonts.major;
+    if (face.startsWith('+mn')) return ctx.themeFonts.minor;
+    return face;
+  }
+  return ctx.themeFonts.minor;
+}

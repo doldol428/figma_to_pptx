@@ -153,6 +153,66 @@ PptxGenJS 4.0.1 의 `ShapeFillProps.type` 은 `'none' | 'solid'` 뿐이라 `grad
 `objectName` 으로 도형을 찾아 `<a:solidFill>` 을 `<a:gradFill>` 로 치환하는 후처리다.
 (IR 의 `ShapeItem.name` 이 그대로 `objectName` 으로 들어가 있어 앵커는 이미 준비돼 있다.)
 
+## PPTX 가져오기 (역방향)
+
+`PPTX 가져오기` 탭에서 .pptx 를 고르면 슬라이드가 프레임으로 들어온다.
+슬라이드 크기가 그대로 프레임 크기가 되므로, A4 문서는 595.28 × 841.89 px 프레임이 된다 —
+내보내기와 같은 규약이라 왕복이 성립한다.
+
+### 방향이 반대인 것과 난이도가 반대인 것은 다르다
+
+내보내기는 Figma 의 좁은 모델에서 출발해 필요한 것만 만든다. 가져오기는 남이 만든 PPTX 가
+표현할 수 있는 것을 전부 받아내야 한다. 그래서 코드도 공유하지 않고 `src/import/` 로 분리했다.
+
+실제 제안서(58장, 103MB)를 파싱한 결과:
+
+```
+슬라이드  58장 · 210.0 × 297.0 mm     파싱 3.1초
+노드      도형 2,597 · 텍스트 2,080 · 그룹 1,641 · 이미지 650 · 표 21
+기하      path 763 · line 656 · rect 556 · roundRect 415 · ellipse 207
+경고      2건 (.emf 이미지 — Figma 가 읽지 못하는 형식)
+```
+
+### 함정 세 가지
+
+**그룹 좌표계.** `<a:xfrm>` 의 `chOff`/`chExt` 는 자식 좌표계를 실제 배치로 매핑한다.
+이걸 빼먹으면 그룹 안 요소가 전부 어긋난다 — 위 파일에 그룹이 1,641개 있다.
+중첩까지 따라가야 해서 아핀 행렬을 누적한 뒤 도형마다 한 번 분해한다 (`import/transform.ts`).
+
+**테마 상속.** 색은 대부분 `<a:schemeClr val="accent1">` + `lumMod`/`tint`/`shade` 로 오고,
+폰트는 `+mn-lt` 참조로 온다. 슬라이드 XML 만 읽으면 색과 폰트가 전부 틀린다.
+lumMod/satMod 는 RGB 가 아니라 HSL 공간에서 동작해서, RGB 곱셈으로 근사하면 회색조가 무너진다.
+
+**preset 도형.** OOXML 은 187종의 파라메트릭 도형 어휘를 갖는다.
+rect·roundRect·ellipse·line 은 Figma 원시 노드로 만들고(편집이 자연스럽다),
+나머지는 `import/preset.ts` 가 경로를 생성한다. 모르는 종류는 사각형으로 대체하고 경고한다.
+
+### Figma 쪽 한계
+
+| | |
+|---|---|
+| 폰트 | PPTX 는 이름만 적고 파일을 담지 않는다. 이 컴퓨터에 없으면 대체하고 목록으로 보고 |
+| 문단 정렬 | Figma 는 가로 정렬이 상자 단위다 (`setRange*` 에 해당 항목이 없다). 문단마다 다르면 경고 |
+| 표 | Figma 에 표 원시 타입이 없어 프레임 격자로 재구성한다. 셀 테두리는 변별 선 두께로 옮긴다 |
+| 차트 · SmartArt | 대응 개체가 없어 건너뛰고 경고 |
+| .emf · .wdp | Figma 가 못 읽는 형식 |
+
+### 슬라이드는 한 장씩 보낸다
+
+파싱은 UI 스레드(JSZip · XML), 노드 생성은 main 스레드가 한다.
+위 파일은 이미지가 base64 로 115MB 까지 부푸는데, 한 번에 postMessage 로 넘기면 감당하지 못한다.
+그래서 `importBegin` → `importSlide` × N → `importEnd` 로 나눠 보낸다.
+
+### 검증
+
+```powershell
+npx esbuild tools/verify-import.ts --bundle --platform=node --format=esm --outfile=dist/verify-import.mjs --external:jszip
+node dist/verify-import.mjs "<pptx 경로>"
+```
+
+파서는 순수 함수라 Node 에서 그대로 돌아간다. 노드 종류·기하·폰트·경고와 함께
+**좌표 범위를 벗어난 노드 수**를 낸다 — 이 값이 크면 그룹 좌표계 매핑이 깨졌다는 신호다.
+
 ## 언어
 
 한국어와 영어만 지원한다. 그 외 언어는 전부 영어로 떨어진다.

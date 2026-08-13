@@ -1,5 +1,6 @@
+import { readPptx } from '../import/reader';
 import { resolveLocale, setLocale, t } from '../shared/i18n';
-import type { Doc, MainToUi, SelectionState, UiToMain } from '../shared/ir';
+import type { MainToUi, SelectionState, UiToMain, Warning } from '../shared/ir';
 import { ptToMm } from '../shared/units';
 import { buildPptx } from './build';
 import { Dropdown, type DropdownOption } from './dropdown';
@@ -41,7 +42,93 @@ function renderStaticText(): void {
   $('dpiMenu').setAttribute('aria-label', t().imageResolution);
   elDetail.textContent = t().selectFrame;
   elExport.textContent = t().exportButton;
+  $('tabExport').textContent = t().tabExport;
+  $('tabImport').textContent = t().tabImport;
+  $('importTitle').textContent = t().tabImport;
+  $('importHint').textContent = t().dropHint;
+  elPick.textContent = t().pickFile;
 }
+
+/* ── 방향 전환 ───────────────────────────────────────────────── */
+
+const elTabExport = $<HTMLButtonElement>('tabExport');
+const elTabImport = $<HTMLButtonElement>('tabImport');
+const elPaneExport = $('paneExport');
+const elPaneImport = $('paneImport');
+const elPick = $<HTMLButtonElement>('pick');
+const elFile = $<HTMLInputElement>('file');
+
+function showTab(which: 'export' | 'import'): void {
+  const isExport = which === 'export';
+  elTabExport.setAttribute('aria-selected', String(isExport));
+  elTabImport.setAttribute('aria-selected', String(!isExport));
+  elPaneExport.classList.toggle('hidden', !isExport);
+  elPaneImport.classList.toggle('hidden', isExport);
+  elWarnings.classList.add('hidden');
+  elBlocked.classList.add('hidden');
+  syncHeight();
+}
+
+elTabExport.addEventListener('click', () => showTab('export'));
+elTabImport.addEventListener('click', () => showTab('import'));
+
+/* ── 가져오기 ────────────────────────────────────────────────── */
+
+elPick.addEventListener('click', () => {
+  if (!busy) elFile.click();
+});
+
+elFile.addEventListener('change', () => {
+  const file = elFile.files?.[0];
+  elFile.value = '';
+  if (file) void runImport(file);
+});
+
+async function runImport(file: File): Promise<void> {
+  if (busy) return;
+  if (!/\.pptx$/i.test(file.name)) {
+    showBlocked(t().notPptx);
+    return;
+  }
+
+  busy = true;
+  elPick.disabled = true;
+  elWarnings.classList.add('hidden');
+  elBlocked.classList.add('hidden');
+  elPick.textContent = t().parsing;
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const doc = await readPptx(buffer, file.name, {
+      onProgress: (done, total) => {
+        elPick.textContent = t().reading(done, total);
+      },
+    });
+
+    toMain({
+      type: 'importBegin',
+      widthPt: doc.widthPt,
+      heightPt: doc.heightPt,
+      fileName: doc.fileName,
+      total: doc.slides.length,
+      fonts: doc.fonts,
+    });
+    // 한 장씩 보낸다. 이미지가 base64 로 부푼 문서를 한 번에 넘기면 postMessage 가 죽는다.
+    for (let i = 0; i < doc.slides.length; i++) {
+      toMain({ type: 'importSlide', index: i, slide: doc.slides[i] });
+    }
+    toMain({ type: 'importEnd' });
+
+    pendingWarnings = doc.warnings;
+  } catch (err) {
+    busy = false;
+    elPick.disabled = false;
+    elPick.textContent = t().pickFile;
+    showBlocked(t().importFailed(String(err)));
+  }
+}
+
+let pendingWarnings: Warning[] = [];
 
 function renderSelection(s: SelectionState): void {
   state = s;
@@ -74,14 +161,14 @@ function renderSelection(s: SelectionState): void {
   syncHeight();
 }
 
-function renderWarnings(doc: Doc): void {
-  if (doc.warnings.length === 0) {
+function renderWarnings(warnings: Warning[]): void {
+  if (warnings.length === 0) {
     elWarnings.classList.add('hidden');
   } else {
-    const items = doc.warnings
+    const items = warnings
       .map((w) => `<li><b>${escapeHtml(w.slide)} › ${escapeHtml(w.node)}</b><br>${escapeHtml(w.message)}</li>`)
       .join('');
-    elWarnings.innerHTML = `<h1>${t().warningsTitle(doc.warnings.length)}</h1><ul>${items}</ul>`;
+    elWarnings.innerHTML = `<h1>${t().warningsTitle(warnings.length)}</h1><ul>${items}</ul>`;
     elWarnings.classList.remove('hidden');
   }
   syncHeight();
@@ -197,8 +284,33 @@ window.onmessage = async (event: MessageEvent) => {
     return;
   }
 
+  if (msg.type === 'createProgress') {
+    elPick.textContent = t().creating(msg.done, msg.total);
+    return;
+  }
+
+  if (msg.type === 'imported') {
+    busy = false;
+    elPick.disabled = false;
+    elPick.textContent = t().pickFile;
+    const warnings = pendingWarnings.slice();
+    if (msg.missingFonts.length > 0) {
+      warnings.unshift({
+        slide: t().scopeAll,
+        node: t().imageResolution,
+        message: t().fontsMissing(msg.missingFonts.join(', ')),
+      });
+    }
+    pendingWarnings = [];
+    renderWarnings(warnings);
+    toMain({ type: 'notify', message: t().imported(msg.slides) });
+    return;
+  }
+
   if (msg.type === 'error') {
     finish();
+    elPick.disabled = false;
+    elPick.textContent = t().pickFile;
     showBlocked(msg.message);
     toMain({ type: 'notify', message: msg.message, error: true });
     return;
@@ -209,7 +321,7 @@ window.onmessage = async (event: MessageEvent) => {
     try {
       const blob = await buildPptx(msg.doc);
       download(blob, msg.fileName);
-      renderWarnings(msg.doc);
+      renderWarnings(msg.doc.warnings);
       const size = `${fmt(ptToMm(msg.doc.slideWPt))} × ${fmt(ptToMm(msg.doc.slideHPt))} mm`;
       toMain({ type: 'notify', message: t().exported(msg.doc.slides.length, size) });
     } catch (err) {
