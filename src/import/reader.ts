@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+﻿import JSZip from 'jszip';
 import { t } from '../shared/i18n';
 import type { Warning } from '../shared/ir';
 import type {
@@ -26,6 +26,46 @@ interface Ctx {
   warn: (slide: string, node: string, message: string) => void;
   fonts: Set<string>;
   slideName: string;
+  /** 마스터의 txStyles — 자리표시자 텍스트의 기본 서식 */
+  masterStyles: { title: XNode | null; body: XNode | null; other: XNode | null };
+  /** presentation.xml 의 defaultTextStyle — 일반 텍스트 상자의 기본 서식 */
+  defaultTextStyle: XNode | null;
+}
+
+/**
+ * 텍스트 서식 상속 사슬.
+ *
+ * PPTX 의 글자 크기·색·폰트는 대부분 런에 직접 적혀 있지 않다.
+ * 도형의 `<a:lstStyle>`, 레이아웃 자리표시자, 마스터의 `txStyles`, 프레젠테이션 기본값이
+ * 차례로 얹힌다. 런만 읽으면 값이 없을 때 임의의 기본값으로 떨어져 크기가 통째로 틀어진다.
+ *
+ * 우선순위가 높은 것부터 담는다.
+ */
+type StyleChain = Array<XNode | null>;
+
+/** `<a:lvl{n}pPr><a:defRPr>` — 문단 수준(level)에 해당하는 기본 런 속성 */
+function levelDefaults(lstStyle: XNode | null, level: number): XNode | null {
+  if (!lstStyle) return null;
+  const lvl = one(lstStyle, `lvl${Math.min(9, level + 1)}pPr`);
+  return one(lvl, 'defRPr');
+}
+
+/** 속성이 실제로 적힌 첫 노드를 찾는다 */
+function pickAttr(nodes: StyleChain, attr: string): string | undefined {
+  for (const n of nodes) {
+    const v = n?.attrs[attr];
+    if (v !== undefined) return v;
+  }
+  return undefined;
+}
+
+/** 자식 요소가 있는 첫 노드를 찾는다 */
+function pickChild(nodes: StyleChain, tag: string): XNode | null {
+  for (const n of nodes) {
+    const c = one(n, tag);
+    if (c) return c;
+  }
+  return null;
 }
 
 export interface ReadOptions {
@@ -72,6 +112,7 @@ export async function readPptx(
     minor: xpath(fontScheme, 'minorFont', 'latin')?.attrs.typeface || 'Arial',
   };
 
+  const txStyles = one(master, 'txStyles');
   const fonts = new Set<string>();
   const ctx: Ctx = {
     zip,
@@ -80,6 +121,12 @@ export async function readPptx(
     warn,
     fonts,
     slideName: '',
+    masterStyles: {
+      title: one(txStyles, 'titleStyle'),
+      body: one(txStyles, 'bodyStyle'),
+      other: one(txStyles, 'otherStyle'),
+    },
+    defaultTextStyle: one(deep(presentation, 'presentation') ?? presentation, 'defaultTextStyle'),
   };
 
   const slides: ImportSlide[] = [];
@@ -243,7 +290,7 @@ function placementOf(parent: Mat, local: { m: Mat; w: number; h: number }): Plac
  * 도형의 xfrm 이 없으면 레이아웃의 같은 placeholder 에서 가져온다.
  * 제목·본문 자리표시자는 슬라이드에 위치를 안 적는 경우가 많다.
  */
-function inheritedXfrm(sp: XNode, layout: XNode | null): XNode | null {
+function layoutPlaceholder(sp: XNode, layout: XNode | null): XNode | null {
   const ph = deep(xpath(sp, 'nvSpPr', 'nvPr'), 'ph');
   if (!ph || !layout) return null;
   const idx = ph.attrs.idx;
@@ -253,10 +300,34 @@ function inheritedXfrm(sp: XNode, layout: XNode | null): XNode | null {
     if (!cph) continue;
     if ((idx !== undefined && cph.attrs.idx === idx)
       || (type !== undefined && cph.attrs.type === type)) {
-      return xpath(cand, 'spPr', 'xfrm');
+      return cand;
     }
   }
   return null;
+}
+
+function inheritedXfrm(sp: XNode, layout: XNode | null): XNode | null {
+  return xpath(layoutPlaceholder(sp, layout), 'spPr', 'xfrm');
+}
+
+/** 이 도형의 텍스트에 적용되는 서식 상속 사슬 (우선순위 높은 것부터) */
+function styleChainFor(sp: XNode, layout: XNode | null, ctx: Ctx): StyleChain {
+  const ph = deep(xpath(sp, 'nvSpPr', 'nvPr'), 'ph');
+  const type = ph?.attrs.type;
+  const masterStyle = !ph
+    ? ctx.defaultTextStyle
+    : type === 'title' || type === 'ctrTitle'
+      ? ctx.masterStyles.title
+      : type === 'body' || type === 'subTitle' || type === undefined
+        ? ctx.masterStyles.body
+        : ctx.masterStyles.other;
+
+  return [
+    xpath(sp, 'txBody', 'lstStyle'),
+    xpath(layoutPlaceholder(sp, layout), 'txBody', 'lstStyle'),
+    masterStyle,
+    ctx.defaultTextStyle,
+  ];
 }
 
 function readStroke(ln: XNode | null, ctx: Ctx): StrokeSpec | undefined {
@@ -325,7 +396,7 @@ async function readShape(
     children.push(shape);
   }
 
-  const text = readTextBody(one(sp, 'txBody'), place, name, ctx);
+  const text = readTextBody(one(sp, 'txBody'), place, name, ctx, styleChainFor(sp, layout, ctx));
   if (text) children.push(text);
 
   if (children.length === 0) return null;
@@ -548,7 +619,7 @@ function readTable(
       rowSpan: num(tc.attrs.rowSpan, 1),
       colSpan: num(tc.attrs.gridSpan, 1),
       ...(fill ? { fill } : {}),
-      paragraphs: readParagraphs(one(tc, 'txBody'), ctx),
+      paragraphs: readParagraphs(one(tc, 'txBody'), ctx, [ctx.masterStyles.other]),
       insets: {
         left: pt(num(tcPr?.attrs.marL, 91440)),
         top: pt(num(tcPr?.attrs.marT, 45720)),
@@ -572,10 +643,10 @@ function readTable(
 /* ── 텍스트 ──────────────────────────────────────────────────── */
 
 function readTextBody(
-  txBody: XNode | null, place: Placement, name: string, ctx: Ctx,
+  txBody: XNode | null, place: Placement, name: string, ctx: Ctx, styles: StyleChain,
 ): ImportNode | null {
   if (!txBody) return null;
-  const paragraphs = readParagraphs(txBody, ctx);
+  const paragraphs = readParagraphs(txBody, ctx, styles);
   if (paragraphs.length === 0) return null;
 
   // Figma 텍스트는 가로 정렬이 노드 단위다. 문단마다 다르면 첫 문단 기준으로 눌린다.
@@ -604,23 +675,24 @@ function readTextBody(
   };
 }
 
-function readParagraphs(txBody: XNode | null, ctx: Ctx): Paragraph[] {
+function readParagraphs(txBody: XNode | null, ctx: Ctx, styles: StyleChain): Paragraph[] {
   if (!txBody) return [];
   const out: Paragraph[] = [];
 
   for (const p of all(txBody, 'p')) {
     const pPr = one(p, 'pPr');
+    const level = num(pPr?.attrs.lvl);
     const runs: TextRun[] = [];
 
     for (const child of p.children) {
       if (child.tag === 'r') {
-        const run = readRun(child, pPr, ctx);
+        const run = readRun(child, pPr, ctx, styles, level);
         if (run.text) runs.push(run);
       } else if (child.tag === 'br') {
-        runs.push({ ...readRun(null, pPr, ctx), text: '\n' });
+        runs.push({ ...readRun(null, pPr, ctx, styles, level), text: '\n' });
       } else if (child.tag === 'fld') {
         // 슬라이드 번호 등 필드 — 마지막으로 계산된 값이 그대로 들어 있다
-        const run = readRun(child, pPr, ctx);
+        const run = readRun(child, pPr, ctx, styles, level);
         if (run.text) runs.push(run);
       }
     }
@@ -632,7 +704,7 @@ function readParagraphs(txBody: XNode | null, ctx: Ctx): Paragraph[] {
       runs,
       align: algn === 'ctr' ? 'CENTER' : algn === 'r' ? 'RIGHT'
         : algn === 'just' ? 'JUSTIFIED' : 'LEFT',
-      level: num(pPr?.attrs.lvl),
+      level,
     };
 
     const spcPct = xpath(pPr, 'lnSpc', 'spcPct');
@@ -655,18 +727,28 @@ function readParagraphs(txBody: XNode | null, ctx: Ctx): Paragraph[] {
   return out;
 }
 
-function readRun(r: XNode | null, pPr: XNode | null, ctx: Ctx): TextRun {
-  const rPr = r ? one(r, 'rPr') : null;
-  const defRPr = xpath(pPr, 'defRPr');
-  const props = rPr ?? defRPr;
+/**
+ * 런 속성을 상속 사슬을 따라 해석한다.
+ *
+ * 우선순위: 런의 rPr → 문단의 defRPr → 도형 lstStyle → 레이아웃 자리표시자 → 마스터 → 기본값.
+ * 크기·색·폰트 모두 이 사슬을 타므로, 런만 보면 값이 없을 때 임의의 기본값으로 떨어진다.
+ */
+function readRun(
+  r: XNode | null, pPr: XNode | null, ctx: Ctx, styles: StyleChain, level: number,
+): TextRun {
+  const chain: StyleChain = [
+    r ? one(r, 'rPr') : null,
+    xpath(pPr, 'defRPr'),
+    ...styles.map((s) => levelDefaults(s, level)),
+  ];
 
-  const size = num(props?.attrs.sz, 1800) / 100;
-  const family = resolveFont(props, ctx);
+  const size = num(pickAttr(chain, 'sz'), 1800) / 100;
+  const family = resolveFont(chain, ctx);
   ctx.fonts.add(family);
 
   let color = '000000';
   let opacity = 1;
-  const solid = one(props, 'solidFill');
+  const solid = pickChild(chain, 'solidFill');
   if (solid) {
     const c = resolveColorNode(colorNode(solid), ctx.color);
     if (c) {
@@ -675,8 +757,8 @@ function readRun(r: XNode | null, pPr: XNode | null, ctx: Ctx): TextRun {
     }
   }
 
-  const bold = bool(props?.attrs.b);
-  const italic = bool(props?.attrs.i);
+  const bold = bool(pickAttr(chain, 'b'));
+  const italic = bool(pickAttr(chain, 'i'));
   const run: TextRun = {
     text: r ? (one(r, 't')?.text ?? '') : '',
     size,
@@ -684,26 +766,26 @@ function readRun(r: XNode | null, pPr: XNode | null, ctx: Ctx): TextRun {
     fontStyle: bold && italic ? 'Bold Italic' : bold ? 'Bold' : italic ? 'Italic' : 'Regular',
     bold,
     italic,
-    underline: (props?.attrs.u ?? 'none') !== 'none',
-    strike: (props?.attrs.strike ?? 'noStrike') !== 'noStrike',
+    underline: (pickAttr(chain, 'u') ?? 'none') !== 'none',
+    strike: (pickAttr(chain, 'strike') ?? 'noStrike') !== 'noStrike',
     color,
     opacity,
   };
 
-  const spc = props?.attrs.spc;
+  const spc = pickAttr(chain, 'spc');
   if (spc) run.letterSpacing = num(spc) / 100;
 
-  const link = one(props, 'hlinkClick');
+  const link = pickChild(chain, 'hlinkClick');
   if (link?.attrs['r:id']) run.link = link.attrs['r:id'];
 
   return run;
 }
 
 /** `+mj-lt` / `+mn-lt` 는 테마 폰트 참조다. 한글 문서는 ea(동아시아) 쪽이 실제 폰트인 경우가 많다. */
-function resolveFont(props: XNode | null, ctx: Ctx): string {
-  const candidates = [one(props, 'ea'), one(props, 'latin'), one(props, 'cs')];
-  for (const c of candidates) {
-    const face = c?.attrs.typeface;
+function resolveFont(chain: StyleChain, ctx: Ctx): string {
+  for (const tag of ['ea', 'latin', 'cs']) {
+    const node = pickChild(chain, tag);
+    const face = node?.attrs.typeface;
     if (!face) continue;
     if (face.startsWith('+mj')) return ctx.themeFonts.major;
     if (face.startsWith('+mn')) return ctx.themeFonts.minor;
