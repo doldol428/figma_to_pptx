@@ -29,6 +29,7 @@ interface Ctx {
   warn: (slide: string, node: string, message: string) => void;
   fonts: Set<string>;
   slideName: string;
+  slideNumber: number;
   /** 마스터의 txStyles — 자리표시자 텍스트의 기본 서식 */
   masterStyles: { title: XNode | null; body: XNode | null; other: XNode | null };
   /** presentation.xml 의 defaultTextStyle — 일반 텍스트 상자의 기본 서식 */
@@ -48,11 +49,15 @@ interface Ctx {
  */
 type StyleChain = Array<XNode | null>;
 
-/** `<a:lvl{n}pPr><a:defRPr>` — 문단 수준(level)에 해당하는 기본 런 속성 */
-function levelDefaults(lstStyle: XNode | null, level: number): XNode | null {
+/** `<a:lvl{n}pPr>` — 문단 수준에 해당하는 기본 **문단** 속성 (정렬·행간·글머리) */
+function levelParagraph(lstStyle: XNode | null, level: number): XNode | null {
   if (!lstStyle) return null;
-  const lvl = one(lstStyle, `lvl${Math.min(9, level + 1)}pPr`);
-  return one(lvl, 'defRPr');
+  return one(lstStyle, `lvl${Math.min(9, level + 1)}pPr`);
+}
+
+/** `<a:lvl{n}pPr><a:defRPr>` — 문단 수준에 해당하는 기본 **런** 속성 (크기·색·폰트) */
+function levelDefaults(lstStyle: XNode | null, level: number): XNode | null {
+  return one(levelParagraph(lstStyle, level), 'defRPr');
 }
 
 /** 속성이 실제로 적힌 첫 노드를 찾는다 */
@@ -143,6 +148,7 @@ export async function readPptx(
     warn,
     fonts,
     slideName: '',
+    slideNumber: 1,
     masterStyles: {
       title: one(txStyles, 'titleStyle'),
       body: one(txStyles, 'bodyStyle'),
@@ -162,6 +168,7 @@ export async function readPptx(
     opts.onProgress?.(i, wanted.length);
     const { path: slidePath, number } = wanted[i];
     ctx.slideName = `슬라이드 ${number}`;
+    ctx.slideNumber = number;
 
     const slideXml = await readXml(zip, slidePath);
     const rels = await readRels(zip, slidePath);
@@ -895,39 +902,56 @@ function readParagraphs(txBody: XNode | null, ctx: Ctx, styles: StyleChain): Par
       } else if (child.tag === 'br') {
         runs.push({ ...readRun(null, pPr, ctx, styles, level), text: '\n' });
       } else if (child.tag === 'fld') {
-        // 슬라이드 번호 등 필드 — 마지막으로 계산된 값이 그대로 들어 있다
         const run = readRun(child, pPr, ctx, styles, level);
+        /*
+         * 필드에는 마지막으로 계산된 값이 캐시돼 있는데, 레이아웃에 있는 슬라이드 번호는
+         * 그 값이 "‹#›" 같은 자리표시자다. 그대로 넣으면 페이지마다 ‹#› 이 찍힌다.
+         */
+        if (child.attrs.type === 'slidenum') run.text = String(ctx.slideNumber);
         if (run.text) runs.push(run);
       }
     }
 
     if (runs.length === 0 && out.length === 0) continue;
 
-    const algn = pPr?.attrs.algn;
+    /*
+     * 문단 속성도 런 속성과 같은 사슬을 탄다. pPr 만 보면 정렬이 없을 때 무조건 왼쪽으로
+     * 떨어져, 실제로는 가운데 정렬인 텍스트가 상자 왼쪽에 붙는다.
+     */
+    const pChain: StyleChain = [pPr, ...styles.map((s) => levelParagraph(s, level))];
+
+    const algn = pickAttr(pChain, 'algn');
     const para: Paragraph = {
       runs,
       align: algn === 'ctr' ? 'CENTER' : algn === 'r' ? 'RIGHT'
-        : algn === 'just' ? 'JUSTIFIED' : 'LEFT',
+        : algn === 'just' || algn === 'justLow' ? 'JUSTIFIED' : 'LEFT',
       level,
     };
 
-    const spcPct = xpath(pPr, 'lnSpc', 'spcPct');
+    const spcPct = xpath(pickChild(pChain, 'lnSpc'), 'spcPct');
     if (spcPct) para.lineHeightPct = num(spcPct.attrs.val) / 1000;
-    const before = xpath(pPr, 'spcBef', 'spcPts');
+    const before = xpath(pickChild(pChain, 'spcBef'), 'spcPts');
     if (before) para.spaceBefore = num(before.attrs.val) / 100;
-    const after = xpath(pPr, 'spcAft', 'spcPts');
+    const after = xpath(pickChild(pChain, 'spcAft'), 'spcPts');
     if (after) para.spaceAfter = num(after.attrs.val) / 100;
 
-    const buChar = one(pPr, 'buChar');
-    const buNum = one(pPr, 'buAutoNum');
-    if (buChar) {
-      const char = buChar.attrs.char ?? '•';
-      para.bullet = { kind: 'char', char };
-      // Figma 목록은 글리프를 고를 수 없다. 기호 폰트로 그린 문자는 모양이 바뀐다.
-      const buFont = one(pPr, 'buFont')?.attrs.typeface ?? '';
-      if (char !== '•' || buFont.indexOf('Wingding') >= 0) ctx.customBullets++;
-    } else if (buNum) {
-      para.bullet = { kind: 'number' };
+    // buNone 은 상속된 글머리를 끄는 지시다. 사슬에서 먼저 나오는 쪽이 이긴다.
+    for (const node of pChain) {
+      if (!node) continue;
+      if (one(node, 'buNone')) break;
+      const buChar = one(node, 'buChar');
+      if (buChar) {
+        const char = buChar.attrs.char ?? '•';
+        para.bullet = { kind: 'char', char };
+        // Figma 목록은 글리프를 고를 수 없다. 기호 폰트로 그린 문자는 모양이 바뀐다.
+        const buFont = one(node, 'buFont')?.attrs.typeface ?? '';
+        if (char !== '•' || buFont.indexOf('Wingding') >= 0) ctx.customBullets++;
+        break;
+      }
+      if (one(node, 'buAutoNum')) {
+        para.bullet = { kind: 'number' };
+        break;
+      }
     }
 
     out.push(para);
