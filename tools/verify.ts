@@ -13,6 +13,7 @@ import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
 import { exportScaleForDpi } from '../src/shared/units';
 import { composePptx } from '../src/ui/build';
+import { aliasesFor } from '../src/main/fontalias';
 
 const EMU_PER_MM = 36000;
 const PT_PER_MM = 72 / 25.4;
@@ -321,6 +322,39 @@ async function main(): Promise<void> {
   const clampedCase = exportScaleForDpi(300, 1);
   checkTruthy('A4 실측 300 DPI 는 4× 한계에 걸린 것으로 보고됨', clampedCase.clamped);
   check('한계 적용 후 실제 배율', clampedCase.scale, 4);
+
+  /* ── 한글 글꼴 이름 → Figma 등록명 ───────────────────────────── */
+
+  /*
+   * Figma 데스크탑이 돌려준 실제 목록(2163종)에는 한글 family 가 하나도 없었다.
+   * PPTX 가 적어둔 한글 이름을 그대로 찾으면 설치된 글꼴도 전부 "없음" 이 된다.
+   * 아래 오른쪽 이름들은 그 목록에서 확인한 실제 등록명이다.
+   */
+  console.log('\n한글 글꼴 이름 → Figma 등록명');
+  const aliasCases: Array<[string, string]> = [
+    ['KoPub돋움체 Bold', 'KoPubDotum Bold'],
+    ['KoPub바탕체 Light', 'KoPubBatang Light'],
+    ['맑은 고딕', 'Malgun Gothic'],
+    ['나눔고딕', 'NanumGothic'],
+    ['나눔명조', 'NanumMyeongjo'],
+    ['굴림', 'Gulim'],
+    ['굴림체', 'GulimChe'],
+    ['바탕', 'Batang'],
+    ['궁서체', 'GungsuhChe'],
+    ['HY견고딕', 'HYGothic-Extra'],
+    ['HY헤드라인M', 'HYHeadLine-Medium'],
+    ['서울남산체 B', 'SeoulNamsan B'],
+    ['페이퍼로지 4 Regular', 'Paperlogy 4 Regular'],
+  ];
+  for (const [korean, want] of aliasCases) {
+    const got = aliasesFor(korean);
+    checkTruthy(`${korean} → ${want}`, got.indexOf(want) >= 0);
+  }
+  // 영문 이름은 바꿀 것이 없으므로 후보를 만들지 않는다 (헛돌면 매칭이 느려지고 오탐이 는다).
+  check('영문 이름은 후보 없음', aliasesFor('Pretendard').length, 0);
+  check('영문 이름은 후보 없음 (공백 포함)', aliasesFor('Times New Roman').length, 0);
+  // 구체적인 규칙이 먼저 걸려야 한다 — KoPub돋움체가 돋움체 규칙에 먼저 잡히면 KoPubDotumChe 가 된다.
+  check('KoPub 은 첫 후보가 정확', aliasesFor('KoPub돋움체 Bold')[0], 'KoPubDotum Bold');
 
   if (failures.length > 0) {
     console.error(`\n실패 ${failures.length}건: ${failures.join(', ')}`);

@@ -2,6 +2,7 @@
   GradientPaint, ImageNodeSpec, ImportNode, ImportSlide, Paint, Placement,
   ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
 } from '../shared/importir';
+import { aliasesFor, latinHead } from './fontalias';
 
 /**
  * ImportDoc → Figma 노드.
@@ -185,12 +186,22 @@ class FontBook {
   /**
    * PPTX 의 타이프페이스 이름을 설치된 family/style 로 맞춘다.
    *
-   * PPTX 는 "페이퍼로지 6 SemiBold" 처럼 **굵기가 이름에 붙은 전체 이름**을 저장하는데,
-   * Figma 는 family 와 style 을 나눠서 갖는다. 전체 이름을 family 로만 찾으면
-   * 설치돼 있는 한글 폰트가 통째로 "없음" 으로 잡힌다.
-   * 그래서 뒤에서부터 잘라가며 family 후보를 만들고, 잘라낸 조각을 style 로 본다.
+   * 두 가지가 동시에 어긋난다.
+   * 1. PPTX 는 한글 이름("KoPub돋움체")을 적지만 Figma 는 영문 이름("KoPubDotum")으로만 등록한다.
+   * 2. PPTX 는 "페이퍼로지 6 SemiBold" 처럼 굵기까지 붙은 전체 이름을 쓰지만
+   *    Figma 는 family 와 style 을 나눠서 갖는다.
+   * 그래서 이름을 영문으로 바꾼 후보들까지 포함해 각각 family/style 분리를 시도한다.
    */
   private match(typeface: string, wantStyle: string): FontName | null {
+    for (const name of [typeface, ...aliasesFor(typeface)]) {
+      const hit = this.matchName(name, wantStyle);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  /** 이름 하나를 family/style 로 쪼개 본다. 뒤에서부터 잘라가며 family 후보를 만든다. */
+  private matchName(typeface: string, wantStyle: string): FontName | null {
     const direct = this.installed.get(typeface);
     if (direct) {
       for (const cand of [wantStyle, 'Regular']) {
@@ -240,12 +251,23 @@ class FontBook {
   }
 
   private similar(typeface: string): string {
-    const head = typeface.split(' ')[0].toLowerCase();
-    if (head.length < 2) return '';
+    /*
+     * 앞머리 영문 부분으로도 찾는다. "KoPub돋움체" 를 통째로 대조하면 아무것도 안 걸리지만
+     * "KoPub" 으로는 KoPubDotum · KoPubBatang 이 잡힌다 — 등록명을 눈으로 확인할 수 있어야 한다.
+     */
+    const heads = [typeface.split(' ')[0].toLowerCase()];
+    const latin = latinHead(typeface).toLowerCase();
+    if (latin.length >= 2 && heads.indexOf(latin) < 0) heads.push(latin);
+
     const hits: string[] = [];
     for (const family of this.installed.keys()) {
       const lower = family.toLowerCase();
-      if (lower.indexOf(head) >= 0 || head.indexOf(lower) >= 0) hits.push(family);
+      for (const head of heads) {
+        if (head.length < 2) continue;
+        if (lower.indexOf(head) < 0 && head.indexOf(lower) < 0) continue;
+        if (hits.indexOf(family) < 0) hits.push(family);
+        break;
+      }
       if (hits.length >= 4) break;
     }
     return hits.join(', ');
