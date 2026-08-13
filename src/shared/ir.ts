@@ -196,6 +196,7 @@ export type MainToUi =
   /** 슬라이드 한 장 처리 완료 — UI 는 이걸 받고 다음 장을 보낸다 */
   | { type: 'createProgress'; done: number; total: number }
   | { type: 'imported'; slides: number; missingFonts: string[]; failures: string[] }
+  | { type: 'fontList'; families: string[] }
   | { type: 'error'; message: string };
 
 export type UiToMain =
@@ -216,6 +217,8 @@ export type UiToMain =
   }
   | { type: 'importSlide'; index: number; slide: ImportDoc['slides'][number] }
   | { type: 'importEnd' }
+  /** Figma 가 인식하는 폰트 목록 요청 — 이름이 안 맞을 때 실제 등록명을 확인하는 용도 */
+  | { type: 'fontList' }
   /** 내용 높이에 맞춰 플러그인 창을 줄인다 — 경고 목록 유무에 따라 높이가 크게 달라진다 */
   | { type: 'resize'; height: number }
   | { type: 'notify'; message: string; error?: boolean };

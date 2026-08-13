@@ -62,6 +62,8 @@ export interface Strings {
   fontsMissing: (families: string) => string;
   mixedAlign: string;
   bulletGlyphNode: string;
+  fontListButton: string;
+  fontListSaved: (n: number) => string;
   bulletGlyphChanged: (n: number) => string;
 
   /* 변환 경고 */
@@ -115,6 +117,8 @@ const KO: Strings = {
   fontsMissing: (families) =>
     `이 컴퓨터에 없는 폰트는 대체했습니다: ${families}`,
   bulletGlyphNode: '글머리 기호',
+  fontListButton: 'Figma 가 인식한 폰트 목록 저장',
+  fontListSaved: (n) => `폰트 ${n}종 목록을 저장했습니다`,
   bulletGlyphChanged: (n) =>
     `기호 폰트로 그린 글머리 ${n}곳은 Figma 기본 점(•)으로 바뀝니다. Figma 목록은 글리프를 지정할 수 없습니다.`,
   mixedAlign: '문단마다 가로 정렬이 달라 첫 문단 기준으로 맞췄습니다. Figma 텍스트는 정렬이 상자 단위입니다.',
@@ -184,6 +188,8 @@ const EN: Strings = {
   slideRangeHint: 'All (e.g. 1, 3-5)',
   fontsMissing: (families) => `Fonts not available here were substituted: ${families}`,
   bulletGlyphNode: 'Bullets',
+  fontListButton: 'Save the font list Figma sees',
+  fontListSaved: (n) => `Saved a list of ${n} font families`,
   bulletGlyphChanged: (n) =>
     `${n} bullets drawn with a symbol font become Figma's default dot. Figma lists cannot set a glyph.`,
   mixedAlign: 'Paragraph alignments differed; the first one was applied to the whole box. Figma aligns text per box, not per paragraph.',

@@ -1,4 +1,4 @@
-import { setLocale, t } from '../shared/i18n';
+﻿import { setLocale, t } from '../shared/i18n';
 import type { MainToUi, UiToMain } from '../shared/ir';
 import { resolveSlide } from '../shared/slidesize';
 import { ImportSession } from './create';
@@ -48,6 +48,24 @@ const handle = async (msg: UiToMain): Promise<void> => {
 
   if (msg.type === 'notify') {
     figma.notify(msg.message, msg.error ? { error: true } : undefined);
+    return;
+  }
+
+  if (msg.type === 'fontList') {
+    /*
+     * PPTX 가 적어둔 이름과 Figma 등록명이 안 맞는 일이 잦다 (한글명/영문명).
+     * 여기서는 Figma 가 뭘 들고 있는지 볼 방법이 없으므로 목록 자체를 꺼내 준다.
+     */
+    const byFamily = new Map<string, string[]>();
+    for (const f of await figma.listAvailableFontsAsync()) {
+      const list = byFamily.get(f.fontName.family);
+      if (list) list.push(f.fontName.style);
+      else byFamily.set(f.fontName.family, [f.fontName.style]);
+    }
+    const families = Array.from(byFamily)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([family, styles]) => `${family}  —  ${styles.join(', ')}`);
+    post({ type: 'fontList', families });
     return;
   }
 
