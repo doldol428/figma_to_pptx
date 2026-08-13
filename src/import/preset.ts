@@ -284,8 +284,12 @@ export function presetPath(
         + L(w, h / 2) + L(w - head, h) + L(w - head, y0 + t) + L(head, y0 + t) + L(head, h) + Z);
     }
     case 'homePlate': {
-      // 화살표 머리 길이는 짧은 변 기준이다. 너비로 잡으면 납작한 도형에서 몇 배로 깊어진다.
-      const t = Math.min(w, mn * a('adj', 16667));
+      /*
+       * 화살표 머리 길이는 짧은 변 기준이다. 너비로 잡으면 납작한 도형에서 몇 배로 깊어진다.
+       * 기본값은 chevron 과 같은 50000 이라야 한다 — 둘을 이어 붙인 흐름도에서 homePlate 의
+       * 점이 다음 chevron 의 홈에 정확히 들어가야 균일한 간격이 나온다.
+       */
+      const t = Math.min(w, mn * a('adj', 50000));
       return solid(M(0, 0) + L(w - t, 0) + L(w, h / 2) + L(w - t, h) + L(0, h) + Z);
     }
     case 'chevron': {

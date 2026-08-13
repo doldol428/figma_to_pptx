@@ -167,8 +167,23 @@ export async function readPptx(
     const rels = await readRels(zip, slidePath);
     const layout = await layoutFor(zip, rels);
 
-    const tree = deep(slideXml, 'spTree');
     const nodes: ImportNode[] = [];
+
+    /*
+     * 레이아웃의 고정 요소를 먼저 깐다 — 머리글·꼬리말·괘선처럼 슬라이드에는 없고
+     * 레이아웃에만 있는 것들이다. 이걸 빼면 페이지 상단이 통째로 비어 보인다.
+     *
+     * 자리표시자(ph)는 제외한다. 슬라이드가 같은 자리에 자기 내용을 이미 넣기 때문에
+     * 함께 넣으면 "제목을 입력하세요" 같은 빈 껍데기가 겹쳐 올라온다.
+     */
+    const layoutRels = layout ? await layoutRelsFor(zip, rels) : {};
+    for (const child of deep(layout, 'spTree')?.children ?? []) {
+      if (isPlaceholder(child)) continue;
+      const node = await readNode(child, IDENTITY, ctx, layoutRels, null, null);
+      if (node) nodes.push(node);
+    }
+
+    const tree = deep(slideXml, 'spTree');
     if (tree) {
       for (const child of tree.children) {
         const node = await readNode(child, IDENTITY, ctx, rels, layout, null);
@@ -241,6 +256,24 @@ async function layoutFor(
   const target = Object.values(rels).find((t) => t.indexOf('slideLayout') >= 0);
   if (!target) return null;
   return readXml(zip, `ppt/${target.replace(/^\.\.\//, '')}`);
+}
+
+/** 자리표시자인가 — 레이아웃에서 가져올지 거를지의 기준 */
+function isPlaceholder(el: XNode): boolean {
+  const nvPr = xpath(el, 'nvSpPr', 'nvPr')
+    ?? xpath(el, 'nvPicPr', 'nvPr')
+    ?? xpath(el, 'nvGrpSpPr', 'nvPr')
+    ?? xpath(el, 'nvCxnSpPr', 'nvPr');
+  return !!one(nvPr, 'ph');
+}
+
+/** 레이아웃 파트의 관계 — 레이아웃 안 그림을 찾으려면 슬라이드 것이 아니라 이쪽이 필요하다 */
+async function layoutRelsFor(
+  zip: JSZip, slideRels: Record<string, string>,
+): Promise<Record<string, string>> {
+  const target = Object.values(slideRels).find((v) => v.indexOf('slideLayout') >= 0);
+  if (!target) return {};
+  return readRels(zip, `ppt/${target.replace(/^\.\.\//, '')}`);
 }
 
 function slideTitle(tree: XNode | null): string {
