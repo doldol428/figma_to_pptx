@@ -111,23 +111,33 @@ function nextFreeSpot(): { x: number; y: number } {
  * PPTX 는 폰트 이름만 적어두고 파일을 담지 않으므로, 그 폰트가 이 컴퓨터에 없으면 실패한다.
  * 실패한 폰트는 대체하고 목록으로 보고한다 — 조용히 다른 폰트로 바꿔치면 나중에 더 큰 혼란이 된다.
  */
+const STYLES = ['Regular', 'Bold', 'Italic', 'Bold Italic'];
+
 class FontBook {
-  private readonly ok = new Set<string>();
-  private readonly failed = new Set<string>();
+  /** 설치된 family → 그 family 가 가진 style 들 */
+  private readonly installed = new Map<string, Set<string>>();
+  /** "타이프페이스|요청스타일" → 실제로 쓸 FontName */
+  private readonly resolved = new Map<string, FontName>();
+  private readonly unresolved = new Set<string>();
   private fallback: FontName = { family: 'Inter', style: 'Regular' };
 
   /**
    * 쓸 폰트를 미리 로드한다.
    *
-   * 후보마다 loadFontAsync 를 시도하고 실패를 잡아내는 방식은 쓰지 않는다.
-   * 폰트 25종 × 4스타일이면 왕복이 100번이라 플러그인이 멈춘 것처럼 보인다.
-   * 설치된 목록을 한 번만 받아 존재하는 것만 실제로 로드한다.
+   * 후보마다 loadFontAsync 를 시도하고 실패를 잡는 방식은 쓰지 않는다.
+   * 25종 × 4스타일이면 왕복이 100번이라 플러그인이 멈춘 것처럼 보인다.
+   * 설치 목록을 한 번만 받아 이름을 맞춘 뒤, 실재하는 것만 병렬로 로드한다.
    */
-  async load(families: string[]): Promise<void> {
-    const available = new Set<string>();
+  async load(typefaces: string[]): Promise<void> {
     try {
       for (const f of await figma.listAvailableFontsAsync()) {
-        available.add(`${f.fontName.family}|${f.fontName.style}`);
+        const { family, style } = f.fontName;
+        let styles = this.installed.get(family);
+        if (!styles) {
+          styles = new Set<string>();
+          this.installed.set(family, styles);
+        }
+        styles.add(style);
       }
     } catch {
       // 목록을 못 받으면 아래 로드가 실패하며 대체 폰트로 떨어진다.
@@ -137,7 +147,7 @@ class FontBook {
       { family: 'Inter', style: 'Regular' },
       { family: 'Roboto', style: 'Regular' },
     ]) {
-      if (available.size > 0 && !available.has(`${candidate.family}|${candidate.style}`)) continue;
+      if (!this.installed.get(candidate.family)?.has(candidate.style)) continue;
       try {
         await figma.loadFontAsync(candidate);
         this.fallback = candidate;
@@ -147,45 +157,74 @@ class FontBook {
       }
     }
 
-    const styles = ['Regular', 'Bold', 'Italic', 'Bold Italic'];
-    const wanted: FontName[] = [];
-    for (const family of families) {
-      for (const style of styles) {
-        const key = `${family}|${style}`;
-        if (available.size > 0 && !available.has(key)) {
-          this.failed.add(key);
-          continue;
-        }
-        wanted.push({ family, style });
+    const wanted = new Map<string, FontName>();
+    for (const typeface of typefaces) {
+      let anyMatch = false;
+      for (const style of STYLES) {
+        const font = this.match(typeface, style);
+        if (!font) continue;
+        anyMatch = true;
+        this.resolved.set(`${typeface}|${style}`, font);
+        wanted.set(`${font.family}|${font.style}`, font);
       }
+      if (!anyMatch) this.unresolved.add(typeface);
     }
 
-    // 존재가 확인된 것만 로드한다. 병렬로 보내면 58장짜리도 체감 지연이 없다.
-    await Promise.all(wanted.map(async (font) => {
-      const key = `${font.family}|${font.style}`;
+    await Promise.all(Array.from(wanted.values()).map(async (font) => {
       try {
         await figma.loadFontAsync(font);
-        this.ok.add(key);
       } catch {
-        this.failed.add(key);
+        for (const [key, value] of this.resolved) {
+          if (value.family === font.family && value.style === font.style) this.resolved.delete(key);
+        }
+        this.unresolved.add(font.family);
       }
     }));
   }
 
+  /**
+   * PPTX 의 타이프페이스 이름을 설치된 family/style 로 맞춘다.
+   *
+   * PPTX 는 "페이퍼로지 6 SemiBold" 처럼 **굵기가 이름에 붙은 전체 이름**을 저장하는데,
+   * Figma 는 family 와 style 을 나눠서 갖는다. 전체 이름을 family 로만 찾으면
+   * 설치돼 있는 한글 폰트가 통째로 "없음" 으로 잡힌다.
+   * 그래서 뒤에서부터 잘라가며 family 후보를 만들고, 잘라낸 조각을 style 로 본다.
+   */
+  private match(typeface: string, wantStyle: string): FontName | null {
+    const direct = this.installed.get(typeface);
+    if (direct) {
+      for (const cand of [wantStyle, 'Regular']) {
+        if (direct.has(cand)) return { family: typeface, style: cand };
+      }
+      const first = direct.values().next().value;
+      if (first !== undefined) return { family: typeface, style: first };
+    }
+
+    const parts = typeface.split(' ');
+    for (let cut = parts.length - 1; cut >= 1; cut--) {
+      const family = parts.slice(0, cut).join(' ');
+      const styles = this.installed.get(family);
+      if (!styles) continue;
+      const inName = parts.slice(cut).join(' ');
+      // 이름에 적힌 굵기를 우선한다. "KoPub돋움체 Bold" 의 Bold 는 요청 스타일보다 확실한 정보다.
+      for (const cand of [inName, `${inName} ${wantStyle}`, wantStyle, 'Regular']) {
+        if (styles.has(cand)) return { family, style: cand };
+      }
+      const first = styles.values().next().value;
+      if (first !== undefined) return { family, style: first };
+    }
+    return null;
+  }
+
   /** 쓸 수 있는 가장 가까운 폰트를 돌려준다 */
-  resolve(family: string, style: string): FontName {
-    if (this.ok.has(`${family}|${style}`)) return { family, style };
-    if (this.ok.has(`${family}|Regular`)) return { family, style: 'Regular' };
-    return this.fallback;
+  resolve(typeface: string, style: string): FontName {
+    return this.resolved.get(`${typeface}|${style}`)
+      ?? this.resolved.get(`${typeface}|Regular`)
+      ?? this.fallback;
   }
 
   missing(): string[] {
-    const families = new Set<string>();
-    for (const key of this.failed) {
-      const family = key.slice(0, key.indexOf('|'));
-      if (!this.ok.has(`${family}|Regular`)) families.add(family);
-    }
-    return Array.from(families).sort();
+    return Array.from(this.unresolved).sort();
   }
 }
 
