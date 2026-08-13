@@ -299,6 +299,33 @@ function resize(node: SceneNode & { resizeWithoutConstraints: (w: number, h: num
   node.resizeWithoutConstraints(Math.max(0.01, place.w), Math.max(0.01, place.h));
 }
 
+/**
+ * 이미 제 크기를 잡은 텍스트를 원래 상자의 정렬 기준점에 맞춰 놓는다.
+ *
+ * 자동 크기 상자는 폰트가 바뀌면 폭이 달라진다. 좌상단을 고정하면 가운데 정렬 글이 오른쪽으로,
+ * 오른쪽 정렬 머리글이 여백 밖으로 밀린다. 정렬 방향에 해당하는 변을 붙잡아야 제자리에 남는다.
+ */
+function anchor(
+  text: TextNode,
+  place: Placement,
+  align: TextNode['textAlignHorizontal'],
+  vertical: 'TOP' | 'CENTER' | 'BOTTOM',
+): void {
+  const dx = align === 'RIGHT' ? place.w - text.width
+    : align === 'CENTER' ? (place.w - text.width) / 2
+      : 0;
+  const dy = vertical === 'BOTTOM' ? place.h - text.height
+    : vertical === 'CENTER' ? (place.h - text.height) / 2
+      : 0;
+  applyPlacement(text, {
+    ...place,
+    x: place.x + dx,
+    y: place.y + dy,
+    w: text.width,
+    h: text.height,
+  });
+}
+
 /* ── 색 ──────────────────────────────────────────────────────── */
 
 function rgbOf(hex: string): RGB {
@@ -617,16 +644,6 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
   // 첫 문단 기준으로 노드 전체에 건다. 문단마다 다른 경우는 reader 가 경고로 남긴다.
   text.textAlignHorizontal = spec.paragraphs[0]?.align ?? 'LEFT';
   text.textAlignVertical = spec.vertical;
-  /*
-   * 상자 크기는 언제나 원본 값을 쓴다.
-   *
-   * PPTX 의 wrap="none" + spAutoFit 상자는 PowerPoint 가 **진짜 폰트로** 계산해 저장해 둔
-   * 크기다. Figma 자동 크기에 맡기면 대체 폰트 폭으로 다시 재면서 상자가 커지고,
-   * 오른쪽 정렬 머리글이 페이지 여백을 넘어간다. 폰트가 달라 줄바꿈은 어차피 어긋나지만,
-   * 위치와 여백만은 원본을 지키는 편이 낫다.
-   */
-  text.textAutoResize = 'NONE';
-
   // 상자 여백만큼 안쪽으로 들여 배치한다. Figma 텍스트에는 내부 여백이 없다.
   const place: Placement = {
     ...spec.place,
@@ -635,6 +652,27 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
     w: Math.max(1, spec.place.w - spec.insets.left - spec.insets.right),
     h: Math.max(1, spec.place.h - spec.insets.top - spec.insets.bottom),
   };
+
+  if (spec.autoWidth) {
+    /*
+     * wrap="none" 상자는 **줄을 바꾸지 않는다.** PowerPoint 는 글자가 넘치면 상자 밖으로
+     * 흘려보낼 뿐 접지 않는다. 저장된 크기에 가둬 두면 "CHAPTER" 가 "CHAP/TER" 로 접힌다.
+     *
+     * Figma 에는 "줄바꿈 금지 + 크기 고정" 이 없으므로 자동 크기로 둔다. 대신 상자가
+     * 좌상단에서 자라면 오른쪽 정렬 머리글이 여백을 넘어가므로, 정렬 기준점을 붙잡아
+     * 그쪽을 축으로 자라게 한다 — PowerPoint 가 자동 맞춤에서 하는 것과 같다.
+     */
+    text.textAutoResize = 'WIDTH_AND_HEIGHT';
+    anchor(text, place, text.textAlignHorizontal, spec.vertical);
+    text.opacity = spec.opacity;
+    return text;
+  }
+
+  /*
+   * 일반 상자는 원본 크기를 그대로 쓴다. 폰트가 달라 줄바꿈 지점은 어차피 어긋나지만,
+   * 위치와 여백만은 원본을 지키는 편이 낫다.
+   */
+  text.textAutoResize = 'NONE';
   resize(text, place);
   applyPlacement(text, place);
   text.opacity = spec.opacity;

@@ -48,7 +48,8 @@ function show(nodes: ImportNode[], depth: number): void {
       const fonts = Array.from(new Set(runs.map((r) => r.fontFamily))).join(',').slice(0, 22);
       const colors = Array.from(new Set(runs.map((r) => `#${r.color}`))).join(',');
       console.log(`${pad}text  ${box}${rot}  ${sizes}pt ${colors} [${fonts}] "${text}"`);
-      console.log(`${pad}      여백 L${n.insets.left.toFixed(0)}/T${n.insets.top.toFixed(0)} · ${n.vertical} · 문단 ${n.paragraphs.length} · autoWidth=${n.autoWidth}`);
+      const aligns = Array.from(new Set(n.paragraphs.map((q) => q.align))).join('/');
+      console.log(`${pad}      여백 L${n.insets.left.toFixed(0)}/T${n.insets.top.toFixed(0)} · ${aligns}·${n.vertical} · 문단 ${n.paragraphs.length} · autoWidth=${n.autoWidth}`);
     } else if (n.type === 'group') {
       console.log(`${pad}group ${box}${rot} "${n.name.slice(0, 26)}" (${n.children.length})`);
       show(n.children, depth + 1);

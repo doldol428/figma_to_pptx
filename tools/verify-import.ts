@@ -34,6 +34,7 @@ let deepest = 0;
 let outOfBounds = 0;
 let textChars = 0;
 let imageBytes = 0;
+let noWrap = 0;
 
 function bump(m: Map<string, number>, k: string): void {
   m.set(k, (m.get(k) ?? 0) + 1);
@@ -46,6 +47,8 @@ function walk(nodes: ImportNode[], depth: number): void {
     if (n.type === 'shape') bump(geoms, n.geometry.kind);
     if (n.type === 'text') {
       for (const p of n.paragraphs) for (const r of p.runs) textChars += r.text.length;
+      // wrap="none" 상자는 줄바꿈 없이 자동 크기로 만든다 — 몇 개나 되는지 알아야 한다.
+      if (n.autoWidth) noWrap++;
     }
     if (n.type === 'image') imageBytes += (n.data.length * 3) / 4;
     if (n.type === 'group') walk(n.children, depth + 1);
@@ -71,6 +74,7 @@ for (const [k, v] of [...kinds].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${String(v).padStart(6)}  ${k}`);
 }
 console.log(`  중첩 깊이 ${deepest} · 글자 ${textChars.toLocaleString()}자 · 이미지 ${(imageBytes / 1024 / 1024).toFixed(1)} MB`);
+console.log(`  줄바꿈 없음(wrap="none") 텍스트 ${noWrap}개`);
 
 console.log('\n■ 도형 기하');
 for (const [k, v] of [...geoms].sort((a, b) => b[1] - a[1])) {
