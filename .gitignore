@@ -1,6 +1,9 @@
 # 빌드 산출물 — manifest.json 이 가리키는 dist/ 는 npm run build 로 생성한다
 dist/
 
+# 사내 공유용 zip — npm run pack 으로 생성한다
+release/
+
 # 의존성
 node_modules/
 

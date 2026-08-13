@@ -213,6 +213,22 @@ npm run watch    # 변경 감지 재빌드
 npm run check    # 타입 검사 + 빌드 + A4 검증
 ```
 
+## 사내 배포 (zip)
+
+Community 게시 전에 동료에게 먼저 돌려볼 때 쓴다.
+
+```bash
+npm run pack
+```
+
+`release/innodep-export-v<버전>.zip` 이 생긴다. 안에는 Figma 가 개발 플러그인을 돌리는 데
+필요한 것만 들어간다 — `manifest.json`, `dist/code.js`, `dist/ui.html`, 그리고 설치 안내
+`README.txt`. 소스는 저장소에 있으니 넣지 않는다.
+
+받는 사람은 압축을 풀고 **Plugins → Development → Import plugin from manifest…** 로
+`manifest.json` 을 지정하면 된다. **압축 푼 폴더를 지우거나 옮기면 플러그인이 동작하지 않는다** —
+Figma 는 파일을 복사해 두지 않고 그 경로를 계속 참조한다.
+
 `npm run verify` 는 `dist/verify-a4.pptx` 와 `dist/verify-16x9.pptx` 를 남기므로
 PowerPoint 로 직접 열어 슬라이드 크기를 확인할 수 있다.
 

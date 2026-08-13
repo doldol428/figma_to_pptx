@@ -8,6 +8,7 @@
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "icon": "node tools/make-icon.mjs 128 && node tools/make-icon.mjs 512",
+    "pack": "npm run build && node tools/pack.mjs",
     "verify": "esbuild tools/verify.ts --bundle --platform=node --format=esm --outfile=dist/verify.mjs --external:jszip --external:pptxgenjs --log-level=warning && node dist/verify.mjs",
     "check": "npm run typecheck && npm run build && npm run verify"
   },
