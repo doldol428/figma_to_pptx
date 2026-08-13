@@ -2,7 +2,7 @@
   GradientPaint, ImageNodeSpec, ImportNode, ImportSlide, Paint, Placement,
   ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
 } from '../shared/importir';
-import { aliasesFor, latinHead } from './fontalias';
+import { aliasesFor, latinHead, pickFont } from './fontalias';
 
 /**
  * ImportDoc → Figma 노드.
@@ -210,31 +210,9 @@ class FontBook {
     return null;
   }
 
-  /** 이름 하나를 family/style 로 쪼개 본다. 뒤에서부터 잘라가며 family 후보를 만든다. */
+  /** 이름 하나를 family/style 로 쪼개 본다. 규칙은 순수 함수로 빼 두어 목록만 있으면 검증할 수 있다. */
   private matchName(typeface: string, wantStyle: string): FontName | null {
-    const direct = this.installed.get(typeface);
-    if (direct) {
-      for (const cand of [wantStyle, 'Regular']) {
-        if (direct.has(cand)) return { family: typeface, style: cand };
-      }
-      const first = direct.values().next().value;
-      if (first !== undefined) return { family: typeface, style: first };
-    }
-
-    const parts = typeface.split(' ');
-    for (let cut = parts.length - 1; cut >= 1; cut--) {
-      const family = parts.slice(0, cut).join(' ');
-      const styles = this.installed.get(family);
-      if (!styles) continue;
-      const inName = parts.slice(cut).join(' ');
-      // 이름에 적힌 굵기를 우선한다. "KoPub돋움체 Bold" 의 Bold 는 요청 스타일보다 확실한 정보다.
-      for (const cand of [inName, `${inName} ${wantStyle}`, wantStyle, 'Regular']) {
-        if (styles.has(cand)) return { family, style: cand };
-      }
-      const first = styles.values().next().value;
-      if (first !== undefined) return { family, style: first };
-    }
-    return null;
+    return pickFont(this.installed, typeface, wantStyle);
   }
 
   /**

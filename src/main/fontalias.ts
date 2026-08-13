@@ -15,6 +15,12 @@
 
 /** 긴 이름이 먼저 와야 한다 — `KoPub돋움체` 가 `돋움체` 규칙에 먼저 잡히면 안 된다. */
 const ALIASES: Array<[string, string[]]> = [
+  // KoPubWorld 는 KoPub 규칙에 걸리지 않는다 ("KoPubWorld돋움체" 안에 "KoPub돋움체" 가 없다). 따로 적는다.
+  ['KoPubWorld돋움체_Pro', ['KoPubWorldDotum_Pro']],
+  ['KoPubWorld바탕체_Pro', ['KoPubWorldBatang_Pro']],
+  ['KoPubWorld돋움체', ['KoPubWorldDotum', 'KoPubWorldDotum_Pro']],
+  ['KoPubWorld바탕체', ['KoPubWorldBatang', 'KoPubWorldBatang_Pro']],
+
   // KoPub — 배포판마다 World / _Pro 접미사가 다르다
   ['KoPub돋움체', ['KoPubDotum', 'KoPubWorldDotum', 'KoPubWorldDotum_Pro', 'KoPub Dotum']],
   ['KoPub바탕체', ['KoPubBatang', 'KoPubWorldBatang', 'KoPubWorldBatang_Pro', 'KoPub Batang']],
@@ -69,6 +75,9 @@ const ALIASES: Array<[string, string[]]> = [
   ['제주한라산', ['JejuHallasan']],
   ['배달의민족 한나', ['BM HANNA_TTF']],
   ['지마켓 산스', ['Gmarket Sans TTF']],
+  ['G마켓 산스 TTF', ['Gmarket Sans TTF']],
+  ['G마켓 산스', ['Gmarket Sans TTF']],
+  ['넥슨 풋볼고딕', ['NEXON Football Gothic']],
   ['에스코어 드림', ['S-Core Dream']],
 
   // 본문용
@@ -84,6 +93,55 @@ const ALIASES: Array<[string, string[]]> = [
 export function latinHead(typeface: string): string {
   const m = /^[A-Za-z][A-Za-z0-9 .\-_]*/.exec(typeface);
   return m ? m[0].trim() : '';
+}
+
+/**
+ * 이름 하나를 설치된 family/style 로 쪼갠다. 순수 함수 — 설치 목록을 인자로 받는다.
+ *
+ * PPTX 는 "Paperlogy 4 Regular" 처럼 굵기가 붙은 전체 이름을 쓰고 Figma 는 family 와 style 을
+ * 나눠서 갖는다. 그래서 뒤에서부터 잘라가며 family 후보를 만들고, 잘라낸 조각을 style 로 본다.
+ *
+ * 잘라낸 조각도 뒤에서부터 줄여가며 본다. "Pretendard Variable ExtraBold" 는 family 가
+ * "Pretendard" 인데 남는 조각이 "Variable ExtraBold" 라, 통째로만 대조하면 굵기를 잃고
+ * Regular 로 떨어진다. "ExtraBold" 까지 줄여야 맞는다.
+ */
+export function pickFont(
+  installed: Map<string, Set<string>>,
+  typeface: string,
+  wantStyle: string,
+): { family: string; style: string } | null {
+  const direct = installed.get(typeface);
+  if (direct) {
+    for (const cand of [wantStyle, 'Regular']) {
+      if (direct.has(cand)) return { family: typeface, style: cand };
+    }
+    const first = direct.values().next().value;
+    if (first !== undefined) return { family: typeface, style: first };
+  }
+
+  const parts = typeface.split(' ');
+  for (let cut = parts.length - 1; cut >= 1; cut--) {
+    const family = parts.slice(0, cut).join(' ');
+    const styles = installed.get(family);
+    if (!styles) continue;
+
+    /*
+     * 이름에 적힌 굵기를 요청 스타일보다 우선한다 — "KoPubDotum Bold" 의 Bold 가 더 확실한 정보다.
+     * 긴 조각부터 본다: "4 Regular" 가 있으면 그걸 쓰고, 없을 때만 "Regular" 로 줄인다.
+     */
+    const words = parts.slice(cut);
+    for (let from = 0; from < words.length; from++) {
+      const cand = words.slice(from).join(' ');
+      if (styles.has(cand)) return { family, style: cand };
+    }
+    const inName = words.join(' ');
+    for (const cand of [`${inName} ${wantStyle}`, wantStyle, 'Regular']) {
+      if (styles.has(cand)) return { family, style: cand };
+    }
+    const first = styles.values().next().value;
+    if (first !== undefined) return { family, style: first };
+  }
+  return null;
 }
 
 /**

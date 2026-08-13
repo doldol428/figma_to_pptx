@@ -13,7 +13,7 @@ import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
 import { exportScaleForDpi } from '../src/shared/units';
 import { composePptx } from '../src/ui/build';
-import { aliasesFor } from '../src/main/fontalias';
+import { aliasesFor, pickFont } from '../src/main/fontalias';
 
 const EMU_PER_MM = 36000;
 const PT_PER_MM = 72 / 25.4;
@@ -355,6 +355,76 @@ async function main(): Promise<void> {
   check('영문 이름은 후보 없음 (공백 포함)', aliasesFor('Times New Roman').length, 0);
   // 구체적인 규칙이 먼저 걸려야 한다 — KoPub돋움체가 돋움체 규칙에 먼저 잡히면 KoPubDotumChe 가 된다.
   check('KoPub 은 첫 후보가 정확', aliasesFor('KoPub돋움체 Bold')[0], 'KoPubDotum Bold');
+
+  /* ── 폰트 이름 → 실제 등록된 family/style ────────────────────── */
+
+  /*
+   * 이름을 바꾸는 것만으로는 부족하다. 실제로 설치 목록에서 집히는지가 관건이다.
+   * 아래 목록은 Figma 데스크탑이 돌려준 이름을 그대로 옮긴 것이다 (스타일 표기까지 그대로).
+   */
+  const installed = new Map<string, Set<string>>([
+    ['Paperlogy', new Set(['1 Thin', '2 ExtraLight', '3 Light', '4 Regular', '5 Medium', '6 SemiBold', '7 Bold', '8 ExtraBold', '9 Black'])],
+    ['Freesentation', new Set(['1 Thin', '2 ExtraLight', '3 Light', '4 Regular', '5 Medium', '6 SemiBold', '7 Bold', '8 ExtraBold', '9 Black'])],
+    ['KoPubDotum', new Set(['Bold', 'Light', 'Medium'])],
+    ['KoPubBatang', new Set(['Bold', 'Light', 'Medium'])],
+    ['KoPubWorldDotum', new Set(['Bold', 'Light', 'Medium'])],
+    ['KoPubWorldDotum_Pro', new Set(['Bold', 'Light', 'Medium'])],
+    ['NEXON Football Gothic', new Set(['B', 'L'])],
+    ['Gmarket Sans TTF', new Set(['Bold', 'Light', 'Medium'])],
+    ['NanumSquare', new Set(['Bold', 'ExtraBold', 'Light', 'Regular'])],
+    ['Malgun Gothic', new Set(['Bold', 'Regular', 'Semilight'])],
+    ['Gulim', new Set(['Regular'])],
+    // Pretendard 는 굵기가 style 로만 있고 이름에는 "Variable" 이 끼어 있다
+    ['Pretendard', new Set(['Black', 'Bold', 'ExtraBold', 'ExtraLight', 'Light', 'Medium', 'Regular', 'SemiBold', 'Thin'])],
+  ]);
+
+  /** 문서에 포함된 글꼴에서 읽어낸 표 (실제 덱에서 뽑은 값) */
+  const docAliases: Record<string, string> = {
+    '페이퍼로지 4 Regular': 'Paperlogy 4 Regular',
+    '페이퍼로지 8 ExtraBold': 'Paperlogy 8 ExtraBold',
+    '프리젠테이션 3 Light': 'Freesentation 3 Light',
+    '프리젠테이션 6 SemiBold': 'Freesentation 6 SemiBold',
+    'KoPub돋움체 Bold': 'KoPubDotum Bold',
+    '맑은 고딕': 'Malgun Gothic',
+    '공체 Light': 'Gulim',
+  };
+
+  /** 플러그인이 하는 순서 그대로: 문서 표 → 정적 별칭표 → family/style 분리 */
+  const resolveName = (typeface: string, wantStyle: string): string => {
+    const doc = docAliases[typeface];
+    const names = doc ? [typeface, doc, ...aliasesFor(typeface)] : [typeface, ...aliasesFor(typeface)];
+    for (const name of names) {
+      const hit = pickFont(installed, name, wantStyle);
+      if (hit) return `${hit.family} / ${hit.style}`;
+    }
+    return '없음';
+  };
+
+  console.log('\n폰트 이름 → 실제 등록된 family/style');
+  const resolveCases: Array<[string, string, string]> = [
+    // 문서에 포함된 글꼴에서 이름을 얻는 경우
+    ['페이퍼로지 4 Regular', 'Regular', 'Paperlogy / 4 Regular'],
+    ['페이퍼로지 8 ExtraBold', 'Bold', 'Paperlogy / 8 ExtraBold'],
+    ['프리젠테이션 3 Light', 'Regular', 'Freesentation / 3 Light'],
+    ['프리젠테이션 6 SemiBold', 'Bold', 'Freesentation / 6 SemiBold'],
+    ['맑은 고딕', 'Bold', 'Malgun Gothic / Bold'],
+    // 정적 별칭표로만 풀리는 경우 (문서에 포함돼 있지 않은 글꼴)
+    ['KoPub돋움체 Medium', 'Regular', 'KoPubDotum / Medium'],
+    ['KoPubWorld돋움체 Bold', 'Bold', 'KoPubWorldDotum / Bold'],
+    ['KoPubWorld돋움체_Pro Light', 'Regular', 'KoPubWorldDotum_Pro / Light'],
+    ['G마켓 산스 TTF Bold', 'Bold', 'Gmarket Sans TTF / Bold'],
+    ['넥슨 풋볼고딕 B', 'Bold', 'NEXON Football Gothic / B'],
+    ['나눔스퀘어 ExtraBold', 'Bold', 'NanumSquare / ExtraBold'],
+    // 이름 중간에 "Variable" 이 끼어도 굵기를 잃지 않아야 한다
+    ['Pretendard Variable ExtraBold', 'Regular', 'Pretendard / ExtraBold'],
+    ['Pretendard Variable SemiBold', 'Regular', 'Pretendard / SemiBold'],
+    ['Pretendard', 'Bold', 'Pretendard / Bold'],
+  ];
+  for (const [typeface, wantStyle, want] of resolveCases) {
+    check(`${typeface} (${wantStyle})`, resolveName(typeface, wantStyle), want);
+  }
+  // 설치돼 있지 않으면 조용히 아무거나 집지 말고 없다고 해야 한다.
+  check('설치 안 된 글꼴', resolveName('Dinmed', 'Regular'), '없음');
 
   if (failures.length > 0) {
     console.error(`\n실패 ${failures.length}건: ${failures.join(', ')}`);
