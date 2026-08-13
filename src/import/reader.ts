@@ -5,7 +5,10 @@ import type {
   ImportDoc, ImportNode, ImportSlide, Paint, Paragraph, Placement, ShapeGeometry,
   ShadowSpec, StrokeSpec, TableCell, TextRun,
 } from '../shared/importir';
-import { colorNode, readFill, readLinePaint, resolveColorNode, type ColorContext } from './color';
+import {
+  colorNode, inheritsGroupFill, readFill, readLinePaint, resolveColorNode, sliceFillForChild,
+  type ColorContext,
+} from './color';
 import { connectorPath, nativeFor, presetPath, readAdjust } from './preset';
 import {
   IDENTITY, decompose, multiply, placeBox, scale, translate, type Mat,
@@ -143,7 +146,7 @@ export async function readPptx(
     const nodes: ImportNode[] = [];
     if (tree) {
       for (const child of tree.children) {
-        const node = await readNode(child, IDENTITY, ctx, rels, layout);
+        const node = await readNode(child, IDENTITY, ctx, rels, layout, null);
         if (node) nodes.push(node);
       }
     }
@@ -238,22 +241,29 @@ function readSlideBackground(slide: XNode | null, ctx: Ctx): Paint | null {
 
 /* ── 노드 ────────────────────────────────────────────────────── */
 
+/** 부모 그룹이 물려주는 채우기와 그 그룹의 범위 (grpFill 해석용) */
+interface Inherited {
+  paint: Paint;
+  box: { x: number; y: number; w: number; h: number };
+}
+
 async function readNode(
   el: XNode,
   parent: Mat,
   ctx: Ctx,
   rels: Record<string, string>,
   layout: XNode | null,
+  inherited: Inherited | null,
 ): Promise<ImportNode | null> {
   switch (el.tag) {
     case 'sp':
-      return readShape(el, parent, ctx, layout);
+      return readShape(el, parent, ctx, layout, inherited);
     case 'cxnSp':
       return readConnector(el, parent, ctx);
     case 'pic':
       return readPicture(el, parent, ctx, rels);
     case 'grpSp':
-      return readGroup(el, parent, ctx, rels, layout);
+      return readGroup(el, parent, ctx, rels, layout, inherited);
     case 'graphicFrame':
       return readGraphicFrame(el, parent, ctx);
     default:
@@ -363,7 +373,7 @@ function readShadow(spPr: XNode | null, ctx: Ctx): ShadowSpec | undefined {
 }
 
 async function readShape(
-  sp: XNode, parent: Mat, ctx: Ctx, layout: XNode | null,
+  sp: XNode, parent: Mat, ctx: Ctx, layout: XNode | null, inherited: Inherited | null,
 ): Promise<ImportNode | null> {
   const spPr = one(sp, 'spPr');
   const local = localMatrix(one(spPr, 'xfrm') ?? inheritedXfrm(sp, layout));
@@ -378,7 +388,12 @@ async function readShape(
   const prst = prstGeom?.attrs.prst ?? '';
   const adj = readAdjust(prstGeom);
 
-  const fill = readFill(spPr, ctx.color) ?? undefined;
+  // grpFill 이면 부모 그룹의 채우기를 이 도형이 차지하는 구간만큼 잘라 쓴다.
+  const own = readFill(spPr, ctx.color);
+  const fill = own ?? (inheritsGroupFill(spPr) && inherited
+    ? sliceFillForChild(inherited.paint, inherited.box, place)
+    : undefined);
+
   const stroke = readStroke(one(spPr, 'ln'), ctx);
   const shadow = readShadow(spPr, ctx);
 
@@ -491,6 +506,7 @@ async function readConnector(el: XNode, parent: Mat, ctx: Ctx): Promise<ImportNo
 
 async function readGroup(
   el: XNode, parent: Mat, ctx: Ctx, rels: Record<string, string>, layout: XNode | null,
+  inherited: Inherited | null,
 ): Promise<ImportNode | null> {
   const grpSpPr = one(el, 'grpSpPr');
   const xfrm = one(grpSpPr, 'xfrm');
@@ -525,15 +541,22 @@ async function readGroup(
 
   const childMat = multiply(multiply(parent, placed), inner);
 
+  const name = xpath(el, 'nvGrpSpPr', 'cNvPr')?.attrs.name ?? '그룹';
+  const place = placementOf(parent, { m: placed, w, h });
+
+  // 이 그룹이 채우기를 들고 있으면 grpFill 을 쓰는 자식들이 그것을 나눠 쓴다.
+  // 그룹 자신에게 채우기가 없으면 위에서 물려받은 것을 그대로 넘긴다.
+  const ownFill = readFill(grpSpPr, ctx.color);
+  const passDown: Inherited | null = ownFill
+    ? { paint: ownFill, box: place }
+    : inheritsGroupFill(grpSpPr) ? inherited : inherited;
+
   const children: ImportNode[] = [];
   for (const child of el.children) {
-    const node = await readNode(child, childMat, ctx, rels, layout);
+    const node = await readNode(child, childMat, ctx, rels, layout, passDown);
     if (node) children.push(node);
   }
   if (children.length === 0) return null;
-
-  const name = xpath(el, 'nvGrpSpPr', 'cNvPr')?.attrs.name ?? '그룹';
-  const place = placementOf(parent, { m: placed, w, h });
   return { type: 'group', name, place, opacity: 1, children };
 }
 

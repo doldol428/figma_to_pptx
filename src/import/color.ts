@@ -263,6 +263,102 @@ export function readGradient(grad: XNode, ctx: ColorContext): GradientPaint | nu
   return { kind: 'gradient', type: 'linear', angle, stops };
 }
 
+/**
+ * `<a:grpFill/>` — "채우기는 부모 그룹 것을 쓴다".
+ * 이걸 모르면 도형에 채우기가 없다고 판단해 통째로 버리게 된다.
+ */
+export function inheritsGroupFill(spPr: XNode | null): boolean {
+  return !!one(spPr, 'grpFill');
+}
+
+/** 그라디언트의 t 지점 색 (선형 보간) */
+function sampleGradient(g: GradientPaint, t: number): { color: Hex; opacity: number } {
+  const stops = g.stops;
+  if (t <= stops[0].position) return { color: stops[0].color, opacity: stops[0].opacity };
+  const last = stops[stops.length - 1];
+  if (t >= last.position) return { color: last.color, opacity: last.opacity };
+
+  for (let i = 1; i < stops.length; i++) {
+    const a = stops[i - 1];
+    const b = stops[i];
+    if (t > b.position) continue;
+    const span = b.position - a.position;
+    const k = span <= 0 ? 0 : (t - a.position) / span;
+    const ca = parseHex(a.color);
+    const cb = parseHex(b.color);
+    return {
+      color: hexOf({
+        r: ca.r + (cb.r - ca.r) * k,
+        g: ca.g + (cb.g - ca.g) * k,
+        b: ca.b + (cb.b - ca.b) * k,
+      }),
+      opacity: a.opacity + (b.opacity - a.opacity) * k,
+    };
+  }
+  return { color: last.color, opacity: last.opacity };
+}
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** 상자를 그라디언트 축에 투영한 구간 */
+function projectOnAxis(box: Box, dx: number, dy: number): { lo: number; hi: number } {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const x of [box.x, box.x + box.w]) {
+    for (const y of [box.y, box.y + box.h]) {
+      const p = x * dx + y * dy;
+      lo = Math.min(lo, p);
+      hi = Math.max(hi, p);
+    }
+  }
+  return { lo, hi };
+}
+
+/**
+ * 그룹에 걸린 채우기를 자식 하나에 맞춰 잘라낸다.
+ *
+ * PowerPoint 는 그룹의 그라디언트를 그룹 전체 범위에 한 번 그리고 자식들이 그 일부를 보여준다.
+ * 자식마다 원본을 통째로 복사하면 같은 그라디언트가 자식 수만큼 반복돼 완전히 다른 그림이 된다.
+ * 그래서 자식이 차지하는 구간만 0~1 로 다시 펴서 넘긴다.
+ */
+export function sliceFillForChild(paint: Paint, group: Box, child: Box): Paint {
+  if (paint.kind !== 'gradient' || paint.type !== 'linear') return paint;
+
+  const rad = (paint.angle * Math.PI) / 180;
+  const dx = Math.cos(rad);
+  const dy = Math.sin(rad);
+  const g = projectOnAxis(group, dx, dy);
+  const c = projectOnAxis(child, dx, dy);
+
+  const span = g.hi - g.lo;
+  if (span <= 1e-6) return paint;
+
+  const t0 = (c.lo - g.lo) / span;
+  const t1 = (c.hi - g.lo) / span;
+  if (t1 - t0 <= 1e-6) {
+    const at = sampleGradient(paint, t0);
+    return { kind: 'solid', color: at.color, opacity: at.opacity };
+  }
+
+  const start = sampleGradient(paint, t0);
+  const end = sampleGradient(paint, t1);
+  const stops = [{ position: 0, color: start.color, opacity: start.opacity }];
+  for (const s of paint.stops) {
+    const p = (s.position - t0) / (t1 - t0);
+    if (p > 0.0001 && p < 0.9999) {
+      stops.push({ position: p, color: s.color, opacity: s.opacity });
+    }
+  }
+  stops.push({ position: 1, color: end.color, opacity: end.opacity });
+
+  return { ...paint, stops };
+}
+
 /** 선(ln) 요소에서 색을 읽는다 */
 export function readLinePaint(ln: XNode | null, ctx: ColorContext): Paint | null {
   if (!ln) return null;
