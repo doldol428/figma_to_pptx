@@ -198,4 +198,9 @@ export interface ImportDoc {
   warnings: Warning[];
   /** 파일에서 쓰인 폰트 이름 — main 스레드가 로드 가능 여부를 확인한다 */
   fonts: string[];
+  /**
+   * 문서에 포함된 글꼴의 "한글 이름 → 영문 이름" 표.
+   * Figma 는 영문 이름으로만 글꼴을 등록하므로 이게 있으면 이름 맞추기가 정확해진다.
+   */
+  fontAliases: Record<string, string>;
 }

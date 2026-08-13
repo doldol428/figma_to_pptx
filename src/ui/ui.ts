@@ -126,6 +126,7 @@ async function runImport(file: File): Promise<void> {
       fileName: doc.fileName,
       total: doc.slides.length,
       fonts: doc.fonts,
+      fontAliases: doc.fontAliases,
     });
     // 여기서 슬라이드를 바로 보내면 안 된다 — main 이 세션을 만들기 전에 도착해 버려진다.
     // importReady 를 받고 한 장씩, 처리 확인을 받아가며 보낸다.

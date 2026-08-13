@@ -214,6 +214,7 @@ export type UiToMain =
     fileName: string;
     total: number;
     fonts: string[];
+    fontAliases: Record<string, string>;
   }
   | { type: 'importSlide'; index: number; slide: ImportDoc['slides'][number] }
   | { type: 'importEnd' }

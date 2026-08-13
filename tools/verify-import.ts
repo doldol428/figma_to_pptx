@@ -85,6 +85,11 @@ if (outOfBounds > 0) {
 console.log(`\n■ 폰트 ${doc.fonts.length}종`);
 console.log(`  ${doc.fonts.join(', ')}`);
 
+// 문서에 포함된 글꼴의 이름표. Figma 는 영문 이름으로만 등록하므로 이게 매칭의 정답지다.
+const aliases = Object.keys(doc.fontAliases);
+console.log(`\n■ 포함된 글꼴 이름 ${aliases.length}종 (한글 → 영문)`);
+for (const k of aliases.sort()) console.log(`  ${k}  →  ${doc.fontAliases[k]}`);
+
 const byMessage = new Map<string, number>();
 for (const w of doc.warnings) bump(byMessage, w.message);
 console.log(`\n■ 경고 ${doc.warnings.length}건 (${byMessage.size}종)`);

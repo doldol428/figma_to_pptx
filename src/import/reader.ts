@@ -9,6 +9,7 @@ import {
   colorNode, inheritsGroupFill, readFill, readLinePaint, resolveColorNode, sliceFillForChild,
   type ColorContext,
 } from './color';
+import { readEmbeddedFontNames } from './embedded';
 import { connectorPath, nativeFor, presetPath, readAdjust } from './preset';
 import {
   IDENTITY, decompose, multiply, placeBox, scale, translate, type Mat,
@@ -115,6 +116,15 @@ export async function readPptx(
   };
 
   const presentation = await readXml(zip, 'ppt/presentation.xml');
+  /*
+   * 문서에 글꼴이 포함돼 있으면 그 헤더에서 한글 이름 ↔ 영문 이름 대응을 그대로 얻는다.
+   * 파워포인트가 포함된 글꼴로 그리기 때문에, 설치돼 있지 않아도 원본은 멀쩡히 보인다 —
+   * 여기서 이름을 못 맞추면 "설치돼 있는데 왜 없다고 하냐" 는 상황이 된다.
+   */
+  const fontAliases = await readEmbeddedFontNames(
+    zip, presentation, await readRels(zip, 'ppt/presentation.xml'),
+  );
+
   const sldSz = deep(presentation, 'sldSz');
   const widthPt = pt(num(sldSz?.attrs.cx, 9144000));
   const heightPt = pt(num(sldSz?.attrs.cy, 6858000));
@@ -218,6 +228,7 @@ export async function readPptx(
     slides,
     warnings,
     fonts: Array.from(fonts).sort(),
+    fontAliases,
   };
 }
 

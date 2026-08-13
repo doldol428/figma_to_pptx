@@ -20,6 +20,8 @@ export interface ImportMeta {
   fileName: string;
   total: number;
   fonts: string[];
+  /** 문서에 포함된 글꼴에서 읽어낸 한글 → 영문 이름 대응 */
+  fontAliases: Record<string, string>;
 }
 
 /**
@@ -41,7 +43,7 @@ export class ImportSession {
 
   static async begin(meta: ImportMeta): Promise<ImportSession> {
     const session = new ImportSession(meta);
-    await session.fonts.load(meta.fonts);
+    await session.fonts.load(meta.fonts, meta.fontAliases);
     return session;
   }
 
@@ -120,6 +122,8 @@ class FontBook {
   /** "타이프페이스|요청스타일" → 실제로 쓸 FontName */
   private readonly resolved = new Map<string, FontName>();
   private readonly unresolved = new Set<string>();
+  /** 문서가 포함한 글꼴에서 읽어낸 "한글 이름 → 영문 이름". 손으로 만든 표보다 정확하다. */
+  private docAliases: Record<string, string> = {};
   private fallback: FontName = { family: 'Inter', style: 'Regular' };
 
   /**
@@ -129,7 +133,8 @@ class FontBook {
    * 25종 × 4스타일이면 왕복이 100번이라 플러그인이 멈춘 것처럼 보인다.
    * 설치 목록을 한 번만 받아 이름을 맞춘 뒤, 실재하는 것만 병렬로 로드한다.
    */
-  async load(typefaces: string[]): Promise<void> {
+  async load(typefaces: string[], docAliases: Record<string, string> = {}): Promise<void> {
+    this.docAliases = docAliases;
     try {
       for (const f of await figma.listAvailableFontsAsync()) {
         const { family, style } = f.fontName;
@@ -193,7 +198,12 @@ class FontBook {
    * 그래서 이름을 영문으로 바꾼 후보들까지 포함해 각각 family/style 분리를 시도한다.
    */
   private match(typeface: string, wantStyle: string): FontName | null {
-    for (const name of [typeface, ...aliasesFor(typeface)]) {
+    // 문서가 알려준 이름을 먼저 본다 — 파일에 박힌 실제 이름표라 추측이 아니다.
+    const fromDoc = this.docAliases[typeface];
+    const candidates = fromDoc
+      ? [typeface, fromDoc, ...aliasesFor(typeface)]
+      : [typeface, ...aliasesFor(typeface)];
+    for (const name of candidates) {
       const hit = this.matchName(name, wantStyle);
       if (hit) return hit;
     }
@@ -245,8 +255,11 @@ class FontBook {
    */
   missing(): string[] {
     return Array.from(this.unresolved).sort().map((name) => {
-      const hint = this.similar(name);
-      return hint ? `${name} → 설치 목록의 비슷한 이름: ${hint}` : name;
+      // 문서에 박힌 영문 이름을 같이 보여준다 — 설치할 때 찾아야 할 이름이 이것이다.
+      const english = this.docAliases[name];
+      const label = english ? `${name} (${english})` : name;
+      const hint = this.similar(english ?? name);
+      return hint ? `${label} → 설치 목록의 비슷한 이름: ${hint}` : label;
     });
   }
 
