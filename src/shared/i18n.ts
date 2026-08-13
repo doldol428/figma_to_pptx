@@ -61,6 +61,8 @@ export interface Strings {
   slideRangeHint: string;
   fontsMissing: (families: string) => string;
   mixedAlign: string;
+  bulletGlyphNode: string;
+  bulletGlyphChanged: (n: number) => string;
 
   /* 변환 경고 */
   scopeAll: string;
@@ -112,6 +114,9 @@ const KO: Strings = {
   slideRangeHint: '전체 (예: 1, 3-5)',
   fontsMissing: (families) =>
     `이 컴퓨터에 없는 폰트는 대체했습니다: ${families}`,
+  bulletGlyphNode: '글머리 기호',
+  bulletGlyphChanged: (n) =>
+    `기호 폰트로 그린 글머리 ${n}곳은 Figma 기본 점(•)으로 바뀝니다. Figma 목록은 글리프를 지정할 수 없습니다.`,
   mixedAlign: '문단마다 가로 정렬이 달라 첫 문단 기준으로 맞췄습니다. Figma 텍스트는 정렬이 상자 단위입니다.',
   warningsTitle: (n) => `변환 참고 ${n}건`,
   buildFailed: (err) => `PPTX 생성 실패: ${err}`,
@@ -178,6 +183,9 @@ const EN: Strings = {
   slideRange: 'Slides',
   slideRangeHint: 'All (e.g. 1, 3-5)',
   fontsMissing: (families) => `Fonts not available here were substituted: ${families}`,
+  bulletGlyphNode: 'Bullets',
+  bulletGlyphChanged: (n) =>
+    `${n} bullets drawn with a symbol font become Figma's default dot. Figma lists cannot set a glyph.`,
   mixedAlign: 'Paragraph alignments differed; the first one was applied to the whole box. Figma aligns text per box, not per paragraph.',
   warningsTitle: (n) => (n === 1 ? '1 conversion note' : `${n} conversion notes`),
   buildFailed: (err) => `Could not build the PPTX: ${err}`,

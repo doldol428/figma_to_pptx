@@ -33,6 +33,8 @@ interface Ctx {
   masterStyles: { title: XNode | null; body: XNode | null; other: XNode | null };
   /** presentation.xml 의 defaultTextStyle — 일반 텍스트 상자의 기본 서식 */
   defaultTextStyle: XNode | null;
+  /** Figma 가 그릴 수 없는 글머리 글리프(기호 폰트 등)를 쓴 문단 수 */
+  customBullets: number;
 }
 
 /**
@@ -147,6 +149,7 @@ export async function readPptx(
       other: one(txStyles, 'otherStyle'),
     },
     defaultTextStyle: one(deep(presentation, 'presentation') ?? presentation, 'defaultTextStyle'),
+    customBullets: 0,
   };
 
   // 지정된 번호만 남긴다. 원래 번호는 이름에 유지해서 어느 장인지 알 수 있게 한다.
@@ -180,6 +183,11 @@ export async function readPptx(
     });
   }
   opts.onProgress?.(wanted.length, wanted.length);
+
+  // 기호 폰트 글머리는 Figma 목록으로 바뀌면서 모양이 달라진다. 건별이 아니라 한 번만 알린다.
+  if (ctx.customBullets > 0) {
+    warn(t().scopeAll, t().bulletGlyphNode, t().bulletGlyphChanged(ctx.customBullets));
+  }
 
   return {
     widthPt,
@@ -879,8 +887,15 @@ function readParagraphs(txBody: XNode | null, ctx: Ctx, styles: StyleChain): Par
 
     const buChar = one(pPr, 'buChar');
     const buNum = one(pPr, 'buAutoNum');
-    if (buChar) para.bullet = { kind: 'char', char: buChar.attrs.char ?? '•' };
-    else if (buNum) para.bullet = { kind: 'number' };
+    if (buChar) {
+      const char = buChar.attrs.char ?? '•';
+      para.bullet = { kind: 'char', char };
+      // Figma 목록은 글리프를 고를 수 없다. 기호 폰트로 그린 문자는 모양이 바뀐다.
+      const buFont = one(pPr, 'buFont')?.attrs.typeface ?? '';
+      if (char !== '•' || buFont.indexOf('Wingding') >= 0) ctx.customBullets++;
+    } else if (buNum) {
+      para.bullet = { kind: 'number' };
+    }
 
     out.push(para);
   }

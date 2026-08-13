@@ -514,7 +514,23 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
         cursor = end;
       }
     }
-    void paraStart;
+    /*
+     * 문단 서식. 글머리 기호는 Figma 의 목록으로 옮긴다 — 글리프는 고를 수 없지만
+     * 내어쓰기(줄바꿈된 줄이 기호가 아니라 글자 아래로 붙는 것)가 자동으로 맞는다.
+     * 이 문서에서 내어쓰기가 518곳이라 이게 정렬 차이의 대부분이었다.
+     */
+    const paraEnd = cursor;
+    if (paraEnd > paraStart) {
+      if (para.bullet) {
+        text.setRangeListOptions(paraStart, paraEnd, {
+          type: para.bullet.kind === 'number' ? 'ORDERED' : 'UNORDERED',
+        });
+      }
+      if (para.level > 0) text.setRangeIndentation(paraStart, paraEnd, para.level);
+      const spacing = para.spaceBefore ?? para.spaceAfter;
+      if (spacing) text.setRangeParagraphSpacing(paraStart, paraEnd, spacing);
+    }
+
     if (pi < spec.paragraphs.length - 1) cursor += 1; // 줄바꿈 문자
   }
 
