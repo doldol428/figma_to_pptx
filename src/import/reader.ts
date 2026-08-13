@@ -3,7 +3,7 @@ import { t } from '../shared/i18n';
 import type { Warning } from '../shared/ir';
 import type {
   ImportDoc, ImportNode, ImportSlide, Paint, Paragraph, Placement, ShapeGeometry,
-  ShadowSpec, StrokeSpec, TableCell, TextRun,
+  ShadowSpec, ShapeNode, StrokeSpec, TableCell, TextRun,
 } from '../shared/importir';
 import {
   colorNode, inheritsGroupFill, readFill, readLinePaint, resolveColorNode, sliceFillForChild,
@@ -73,6 +73,23 @@ function pickChild(nodes: StyleChain, tag: string): XNode | null {
 
 export interface ReadOptions {
   onProgress?: (done: number, total: number) => void;
+  /** 가져올 슬라이드 번호(1부터). 비우면 전부. 한 장만 확인할 때 파싱까지 건너뛴다. */
+  only?: Set<number>;
+}
+
+/** "1", "1-5", "1,3,7-9" → {1,3,7,8,9}. 빈 문자열이면 null(전체). */
+export function parseSlideRange(input: string): Set<number> | null {
+  const text = input.trim();
+  if (!text) return null;
+  const out = new Set<number>();
+  for (const part of text.split(',')) {
+    const m = /^\s*(\d+)\s*(?:-\s*(\d+))?\s*$/.exec(part);
+    if (!m) continue;
+    const from = Number(m[1]);
+    const to = m[2] ? Number(m[2]) : from;
+    for (let i = Math.min(from, to); i <= Math.max(from, to); i++) out.add(i);
+  }
+  return out.size > 0 ? out : null;
 }
 
 export async function readPptx(
@@ -132,11 +149,16 @@ export async function readPptx(
     defaultTextStyle: one(deep(presentation, 'presentation') ?? presentation, 'defaultTextStyle'),
   };
 
+  // 지정된 번호만 남긴다. 원래 번호는 이름에 유지해서 어느 장인지 알 수 있게 한다.
+  const wanted = slidePaths
+    .map((path, i) => ({ path, number: i + 1 }))
+    .filter((s) => !opts.only || opts.only.has(s.number));
+
   const slides: ImportSlide[] = [];
-  for (let i = 0; i < slidePaths.length; i++) {
-    opts.onProgress?.(i, slidePaths.length);
-    const slidePath = slidePaths[i];
-    ctx.slideName = `슬라이드 ${i + 1}`;
+  for (let i = 0; i < wanted.length; i++) {
+    opts.onProgress?.(i, wanted.length);
+    const { path: slidePath, number } = wanted[i];
+    ctx.slideName = `슬라이드 ${number}`;
 
     const slideXml = await readXml(zip, slidePath);
     const rels = await readRels(zip, slidePath);
@@ -152,12 +174,12 @@ export async function readPptx(
     }
 
     slides.push({
-      name: `${i + 1}. ${slideTitle(tree) || ctx.slideName}`,
+      name: `${number}. ${slideTitle(tree) || ctx.slideName}`,
       fill: readSlideBackground(slideXml, ctx) ?? undefined,
       nodes,
     });
   }
-  opts.onProgress?.(slidePaths.length, slidePaths.length);
+  opts.onProgress?.(wanted.length, wanted.length);
 
   return {
     widthPt,
@@ -374,6 +396,8 @@ function readShadow(spPr: XNode | null, ctx: Ctx): ShadowSpec | undefined {
 
 async function readShape(
   sp: XNode, parent: Mat, ctx: Ctx, layout: XNode | null, inherited: Inherited | null,
+  /** 주어지면 grpFill 도형의 기하를 여기 모으고 개별 도형은 만들지 않는다 (텍스트는 그대로) */
+  collect?: (part: MergePart) => void,
 ): Promise<ImportNode | null> {
   const spPr = one(sp, 'spPr');
   const local = localMatrix(one(spPr, 'xfrm') ?? inheritedXfrm(sp, layout));
@@ -400,15 +424,26 @@ async function readShape(
   const geometry = resolveGeometry(prst, custGeom, place, adj, name, ctx);
   const children: ImportNode[] = [];
 
-  const hasPaint = !!fill || !!stroke;
-  if (geometry && hasPaint) {
-    const shape: ImportNode = {
-      type: 'shape', name, place, opacity, geometry,
-      ...(fill ? { fill } : {}),
-      ...(stroke ? { stroke } : {}),
-      ...(shadow ? { shadow } : {}),
-    };
-    children.push(shape);
+  const usesGroupFill = !own && inheritsGroupFill(spPr);
+  const mergePath = collect && geometry && usesGroupFill && !stroke
+    && place.rotation === 0 && !place.flipH
+    ? geometryToPath(geometry, place.w, place.h)
+    : null;
+
+  if (mergePath) {
+    // 기하는 형제들과 합쳐서 한 도형으로 낸다. 여기서는 만들지 않는다.
+    collect?.({ path: mergePath, place });
+  } else {
+    const hasPaint = !!fill || !!stroke;
+    if (geometry && hasPaint) {
+      const shape: ImportNode = {
+        type: 'shape', name, place, opacity, geometry,
+        ...(fill ? { fill } : {}),
+        ...(stroke ? { stroke } : {}),
+        ...(shadow ? { shadow } : {}),
+      };
+      children.push(shape);
+    }
   }
 
   const text = readTextBody(one(sp, 'txBody'), place, name, ctx, styleChainFor(sp, layout, ctx));
@@ -551,11 +586,24 @@ async function readGroup(
     ? { paint: ownFill, box: place }
     : inheritsGroupFill(grpSpPr) ? inherited : inherited;
 
+  // 그룹 채우기를 쓰는 자식들은 경로를 모아 하나로 합친다 (mergeParts 주석 참고).
+  const parts: MergePart[] = [];
+  const collect = ownFill ? (part: MergePart): void => { parts.push(part); } : undefined;
+
   const children: ImportNode[] = [];
   for (const child of el.children) {
-    const node = await readNode(child, childMat, ctx, rels, layout, passDown);
+    const node = child.tag === 'sp'
+      ? await readShape(child, childMat, ctx, layout, passDown, collect)
+      : await readNode(child, childMat, ctx, rels, layout, passDown);
     if (node) children.push(node);
   }
+
+  if (ownFill && parts.length > 0) {
+    const merged = mergeParts(parts, ownFill, `${name} 배경`);
+    // 합친 배경은 맨 아래에 둔다 — 나머지 요소가 그 위에 올라앉는 구조다.
+    if (merged) children.unshift(merged);
+  }
+
   if (children.length === 0) return null;
   return { type: 'group', name, place, opacity: 1, children };
 }
@@ -661,6 +709,98 @@ function readTable(
   }));
 
   return { type: 'table', name, place, opacity: 1, colWidths, rowHeights, rows };
+}
+
+/* ── grpFill 병합 ────────────────────────────────────────────── */
+
+/**
+ * 그룹 채우기를 쓰는 형제 도형들을 하나로 합친다.
+ *
+ * PowerPoint 는 그룹 채우기를 자식들의 **합집합에 한 번** 칠한다. Figma 는 노드가 여러 개면
+ * 여러 번 칠하고 겹친 곳을 합성하므로, 반투명 그라디언트에서는 이음매가 진하게 드러난다.
+ * 경로를 합쳐 도형 하나로 만들면 원본과 같아진다.
+ *
+ * 회전·반전이 걸린 도형은 단순 평행이동으로 합칠 수 없어 제외한다.
+ */
+interface MergePart {
+  path: string;
+  place: Placement;
+}
+
+function mergeParts(parts: MergePart[], fill: Paint, name: string): ShapeNode | null {
+  if (parts.length === 0) return null;
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of parts) {
+    minX = Math.min(minX, p.place.x);
+    minY = Math.min(minY, p.place.y);
+    maxX = Math.max(maxX, p.place.x + p.place.w);
+    maxY = Math.max(maxY, p.place.y + p.place.h);
+  }
+
+  const data = parts
+    .map((p) => translatePath(p.path, p.place.x - minX, p.place.y - minY))
+    .join(' ');
+
+  return {
+    type: 'shape',
+    name,
+    place: {
+      x: minX,
+      y: minY,
+      w: Math.max(0.01, maxX - minX),
+      h: Math.max(0.01, maxY - minY),
+      rotation: 0,
+      flipH: false,
+      flipV: false,
+    },
+    opacity: 1,
+    geometry: { kind: 'path', data, evenOdd: false },
+    fill,
+  };
+}
+
+/** 절대 좌표 경로를 평행이동한다. 모든 명령의 인자가 (x, y) 쌍이라 번갈아 더하면 된다. */
+function translatePath(data: string, dx: number, dy: number): string {
+  let i = 0;
+  return data.replace(/-?\d*\.?\d+/g, (token) => {
+    const v = Number(token) + (i++ % 2 === 0 ? dx : dy);
+    return (Math.round(v * 100) / 100).toString();
+  });
+}
+
+/** 원시 도형을 경로로 편다. 합치려면 전부 경로여야 한다. */
+function geometryToPath(geom: ShapeGeometry, w: number, h: number): string | null {
+  switch (geom.kind) {
+    case 'path':
+      return geom.data;
+    case 'rect':
+      return `M0 0 L${w} 0 L${w} ${h} L0 ${h} Z`;
+    case 'line':
+      return `M0 0 L${w} ${h}`;
+    case 'ellipse': {
+      const k = 0.5523;
+      const rx = w / 2;
+      const ry = h / 2;
+      return `M${rx} 0 C${rx + rx * k} 0 ${w} ${ry - ry * k} ${w} ${ry}`
+        + ` C${w} ${ry + ry * k} ${rx + rx * k} ${h} ${rx} ${h}`
+        + ` C${rx - rx * k} ${h} 0 ${ry + ry * k} 0 ${ry}`
+        + ` C0 ${ry - ry * k} ${rx - rx * k} 0 ${rx} 0 Z`;
+    }
+    case 'roundRect': {
+      const k = 0.5523;
+      const [tl, tr, br, bl] = geom.radii;
+      return `M${tl} 0 L${w - tr} 0 C${w - tr + tr * k} 0 ${w} ${tr - tr * k} ${w} ${tr}`
+        + ` L${w} ${h - br} C${w} ${h - br + br * k} ${w - br + br * k} ${h} ${w - br} ${h}`
+        + ` L${bl} ${h} C${bl - bl * k} ${h} 0 ${h - bl + bl * k} 0 ${h - bl}`
+        + ` L0 ${tl} C0 ${tl - tl * k} ${tl - tl * k} 0 ${tl} 0 Z`;
+    }
+    default:
+      return null;
+  }
 }
 
 /* ── 텍스트 ──────────────────────────────────────────────────── */

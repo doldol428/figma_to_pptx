@@ -1,4 +1,4 @@
-import { readPptx } from '../import/reader';
+﻿import { parseSlideRange, readPptx } from '../import/reader';
 import type { ImportDoc } from '../shared/importir';
 import { resolveLocale, setLocale, t } from '../shared/i18n';
 import type { MainToUi, SelectionState, UiToMain, Warning } from '../shared/ir';
@@ -48,6 +48,8 @@ function renderStaticText(): void {
   $('importTitle').textContent = t().tabImport;
   $('importHint').textContent = t().dropHint;
   elPick.textContent = t().pickFile;
+  $('rangeLabel').textContent = t().slideRange;
+  elRange.placeholder = t().slideRangeHint;
 }
 
 /* ── 방향 전환 ───────────────────────────────────────────────── */
@@ -58,6 +60,7 @@ const elPaneExport = $('paneExport');
 const elPaneImport = $('paneImport');
 const elPick = $<HTMLButtonElement>('pick');
 const elFile = $<HTMLInputElement>('file');
+const elRange = $<HTMLInputElement>('range');
 
 function showTab(which: 'export' | 'import'): void {
   const isExport = which === 'export';
@@ -101,6 +104,7 @@ async function runImport(file: File): Promise<void> {
   try {
     const buffer = await file.arrayBuffer();
     const doc = await readPptx(buffer, file.name, {
+      only: parseSlideRange(elRange.value) ?? undefined,
       onProgress: (done, total) => {
         elPick.textContent = t().reading(done, total);
       },

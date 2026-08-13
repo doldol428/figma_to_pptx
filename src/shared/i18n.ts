@@ -57,6 +57,8 @@ export interface Strings {
   imported: (slides: number) => string;
   importFailed: (err: string) => string;
   notPptx: string;
+  slideRange: string;
+  slideRangeHint: string;
   fontsMissing: (families: string) => string;
   mixedAlign: string;
 
@@ -106,6 +108,8 @@ const KO: Strings = {
   imported: (slides) => `슬라이드 ${slides}장을 가져왔습니다`,
   importFailed: (err) => `가져오기 실패: ${err}`,
   notPptx: '.pptx 파일만 가져올 수 있습니다',
+  slideRange: '슬라이드',
+  slideRangeHint: '전체 (예: 1, 3-5)',
   fontsMissing: (families) =>
     `이 컴퓨터에 없는 폰트는 대체했습니다: ${families}`,
   mixedAlign: '문단마다 가로 정렬이 달라 첫 문단 기준으로 맞췄습니다. Figma 텍스트는 정렬이 상자 단위입니다.',
@@ -171,6 +175,8 @@ const EN: Strings = {
   imported: (slides) => `${slides === 1 ? '1 slide' : `${slides} slides`} imported`,
   importFailed: (err) => `Import failed: ${err}`,
   notPptx: 'Only .pptx files can be imported',
+  slideRange: 'Slides',
+  slideRangeHint: 'All (e.g. 1, 3-5)',
   fontsMissing: (families) => `Fonts not available here were substituted: ${families}`,
   mixedAlign: 'Paragraph alignments differed; the first one was applied to the whole box. Figma aligns text per box, not per paragraph.',
   warningsTitle: (n) => (n === 1 ? '1 conversion note' : `${n} conversion notes`),
