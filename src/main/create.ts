@@ -44,6 +44,9 @@ export class ImportSession {
     return session;
   }
 
+  /** 노드 생성에 실패한 항목 — 한 개가 터져도 나머지는 살린다 */
+  readonly failures: string[] = [];
+
   async addSlide(slide: ImportSlide, index: number): Promise<void> {
     const frame = figma.createFrame();
     frame.name = slide.name;
@@ -59,13 +62,21 @@ export class ImportSession {
       : [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
     figma.currentPage.appendChild(frame);
 
+    /*
+     * 노드 하나가 터져도 슬라이드 전체를 잃지 않는다.
+     * 실패는 삼키지 않고 어느 노드였는지 이름과 함께 보고한다 — 조용히 빠지면 원인을 못 찾는다.
+     */
     for (const node of slide.nodes) {
-      const created = await createNode(node, this.fonts);
-      for (const n of created) {
-        const { x, y } = n;
-        frame.appendChild(n);
-        n.x = x;
-        n.y = y;
+      try {
+        const created = await createNode(node, this.fonts);
+        for (const n of created) {
+          const { x, y } = n;
+          frame.appendChild(n);
+          n.x = x;
+          n.y = y;
+        }
+      } catch (err) {
+        this.failures.push(`${slide.name} › ${node.name} (${node.type}): ${String(err)}`);
       }
     }
 
@@ -284,7 +295,14 @@ async function createNode(spec: ImportNode, fonts: FontBook): Promise<SceneNode[
       return [await createTable(spec, fonts)];
     case 'group': {
       const children: SceneNode[] = [];
-      for (const child of spec.children) children.push(...await createNode(child, fonts));
+      for (const child of spec.children) {
+        try {
+          children.push(...await createNode(child, fonts));
+        } catch (err) {
+          // 형제 하나가 실패해도 그룹은 만든다. 바깥에서 잡아 보고한다.
+          throw new Error(`${spec.name} › ${child.name}: ${String(err)}`);
+        }
+      }
       if (children.length === 0) return [];
       // figma.group 은 부모가 있어야 하므로 호출부에서 프레임에 붙인 뒤 묶는다.
       return [wrapGroup(children, spec.name)];

@@ -80,7 +80,12 @@ const handle = async (msg: UiToMain): Promise<void> => {
       figma.currentPage.selection = frames;
       figma.viewport.scrollAndZoomIntoView(frames);
     }
-    post({ type: 'imported', slides: frames.length, missingFonts: session.missingFonts() });
+    post({
+      type: 'imported',
+      slides: frames.length,
+      missingFonts: session.missingFonts(),
+      failures: session.failures,
+    });
     session = null;
     return;
   }

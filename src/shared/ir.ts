@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 중간 표현(IR).
  *
  * main 스레드(Figma 샌드박스)가 씬 그래프를 읽어 IR 로 만들고,
@@ -195,7 +195,7 @@ export type MainToUi =
   | { type: 'importReady' }
   /** 슬라이드 한 장 처리 완료 — UI 는 이걸 받고 다음 장을 보낸다 */
   | { type: 'createProgress'; done: number; total: number }
-  | { type: 'imported'; slides: number; missingFonts: string[] }
+  | { type: 'imported'; slides: number; missingFonts: string[]; failures: string[] }
   | { type: 'error'; message: string };
 
 export type UiToMain =

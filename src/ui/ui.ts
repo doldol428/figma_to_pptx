@@ -336,6 +336,9 @@ window.onmessage = async (event: MessageEvent) => {
         message: t().fontsMissing(msg.missingFonts.join(', ')),
       });
     }
+    for (const f of msg.failures) {
+      warnings.unshift({ slide: t().scopeAll, node: '노드 생성 실패', message: f });
+    }
     pendingWarnings = [];
     renderWarnings(warnings);
     toMain({ type: 'notify', message: t().imported(msg.slides) });
