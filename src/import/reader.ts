@@ -978,8 +978,8 @@ function readRun(
   ];
 
   const size = num(pickAttr(chain, 'sz'), 1800) / 100;
-  const family = resolveFont(chain, ctx);
-  ctx.fonts.add(family);
+  const faces = resolveFont(chain, ctx);
+  for (const f of faces) ctx.fonts.add(f);
 
   let color = '000000';
   let opacity = 1;
@@ -997,7 +997,8 @@ function readRun(
   const run: TextRun = {
     text: r ? (one(r, 't')?.text ?? '') : '',
     size,
-    fontFamily: family,
+    fontFamily: faces[0],
+    ...(faces.length > 1 ? { fontAlternates: faces.slice(1) } : {}),
     fontStyle: bold && italic ? 'Bold Italic' : bold ? 'Bold' : italic ? 'Italic' : 'Regular',
     bold,
     italic,
@@ -1016,15 +1017,26 @@ function readRun(
   return run;
 }
 
-/** `+mj-lt` / `+mn-lt` 는 테마 폰트 참조다. 한글 문서는 ea(동아시아) 쪽이 실제 폰트인 경우가 많다. */
-function resolveFont(chain: StyleChain, ctx: Ctx): string {
+/**
+ * 폰트 이름 후보를 순서대로 모은다.
+ *
+ * 한 글꼴이 이름을 둘 갖는 일이 흔하다 — `<a:ea>` 에 한글 이름("KoPub돋움체 Bold"),
+ * `<a:latin>` 에 영문 이름("KoPubDotum Bold"). 어느 쪽이 Figma 에 등록돼 있는지는
+ * 설치 방식에 따라 다르므로 하나만 보고 없다고 판단하면 안 된다.
+ * 한글 문서는 ea 가 실제로 그려지는 글꼴이라 그쪽을 앞에 둔다.
+ *
+ * `+mj-lt` / `+mn-lt` 는 테마 폰트 참조다.
+ */
+function resolveFont(chain: StyleChain, ctx: Ctx): string[] {
+  const out: string[] = [];
   for (const tag of ['ea', 'latin', 'cs']) {
-    const node = pickChild(chain, tag);
-    const face = node?.attrs.typeface;
+    const face = pickChild(chain, tag)?.attrs.typeface;
     if (!face) continue;
-    if (face.startsWith('+mj')) return ctx.themeFonts.major;
-    if (face.startsWith('+mn')) return ctx.themeFonts.minor;
-    return face;
+    const name = face.startsWith('+mj') ? ctx.themeFonts.major
+      : face.startsWith('+mn') ? ctx.themeFonts.minor
+        : face;
+    if (name && out.indexOf(name) < 0) out.push(name);
   }
-  return ctx.themeFonts.minor;
+  if (out.length === 0) out.push(ctx.themeFonts.minor);
+  return out;
 }

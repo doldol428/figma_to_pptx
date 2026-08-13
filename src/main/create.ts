@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   GradientPaint, ImageNodeSpec, ImportNode, ImportSlide, Paint, Placement,
   ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
 } from '../shared/importir';
@@ -216,15 +216,39 @@ class FontBook {
     return null;
   }
 
-  /** 쓸 수 있는 가장 가까운 폰트를 돌려준다 */
-  resolve(typeface: string, style: string): FontName {
-    return this.resolved.get(`${typeface}|${style}`)
-      ?? this.resolved.get(`${typeface}|Regular`)
-      ?? this.fallback;
+  /**
+   * 쓸 수 있는 가장 가까운 폰트를 돌려준다.
+   * 같은 글꼴의 다른 이름(한글/영문)을 차례로 시도한다 — 어느 쪽이 등록돼 있는지는 설치 방식에 달렸다.
+   */
+  resolve(typeface: string, style: string, alternates?: string[]): FontName {
+    for (const name of [typeface, ...(alternates ?? [])]) {
+      const hit = this.resolved.get(`${name}|${style}`) ?? this.resolved.get(`${name}|Regular`);
+      if (hit) return hit;
+    }
+    return this.fallback;
   }
 
+  /**
+   * 끝내 못 찾은 이름들. 설치 목록에서 비슷한 이름을 함께 붙인다 —
+   * 같은 글꼴이 한글/영문 두 이름을 갖는 경우가 많아, 실제 등록명을 봐야 원인이 잡힌다.
+   */
   missing(): string[] {
-    return Array.from(this.unresolved).sort();
+    return Array.from(this.unresolved).sort().map((name) => {
+      const hint = this.similar(name);
+      return hint ? `${name} → 설치 목록의 비슷한 이름: ${hint}` : name;
+    });
+  }
+
+  private similar(typeface: string): string {
+    const head = typeface.split(' ')[0].toLowerCase();
+    if (head.length < 2) return '';
+    const hits: string[] = [];
+    for (const family of this.installed.keys()) {
+      const lower = family.toLowerCase();
+      if (lower.indexOf(head) >= 0 || head.indexOf(lower) >= 0) hits.push(family);
+      if (hits.length >= 4) break;
+    }
+    return hits.join(', ');
   }
 }
 
@@ -516,7 +540,9 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
 
   // 첫 폰트를 먼저 세워야 characters 를 넣을 수 있다.
   const first = spec.paragraphs[0]?.runs[0];
-  text.fontName = fonts.resolve(first?.fontFamily ?? 'Inter', first?.fontStyle ?? 'Regular');
+  text.fontName = fonts.resolve(
+    first?.fontFamily ?? 'Inter', first?.fontStyle ?? 'Regular', first?.fontAlternates,
+  );
 
   const lines: string[] = [];
   for (const para of spec.paragraphs) {
@@ -538,7 +564,8 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
       const len = run.text.length;
       if (len > 0) {
         const end = cursor + len;
-        text.setRangeFontName(cursor, end, fonts.resolve(run.fontFamily, run.fontStyle));
+        text.setRangeFontName(cursor, end,
+          fonts.resolve(run.fontFamily, run.fontStyle, run.fontAlternates));
         text.setRangeFontSize(cursor, end, Math.max(1, run.size));
         text.setRangeFills(cursor, end,
           [{ type: 'SOLID', color: rgbOf(run.color), opacity: run.opacity }]);

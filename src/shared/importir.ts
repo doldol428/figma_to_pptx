@@ -1,4 +1,4 @@
-import type { Hex, Warning } from './ir';
+﻿import type { Hex, Warning } from './ir';
 
 /**
  * 가져오기(PPTX → Figma) 중간 표현.
@@ -97,6 +97,8 @@ export interface TextRun {
   /** pt */
   size: number;
   fontFamily: string;
+  /** 같은 글꼴의 다른 이름 (한글/영문). 첫 이름이 설치돼 있지 않을 때 차례로 시도한다. */
+  fontAlternates?: string[];
   /** Figma FontName.style 후보. 없으면 Regular 로 떨어진다. */
   fontStyle: string;
   bold: boolean;
