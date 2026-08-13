@@ -355,6 +355,7 @@ function createShape(spec: ShapeNode): SceneNode {
       rotation: spec.place.rotation - angle,
     });
     if (spec.stroke) applyStroke(line, spec.stroke);
+    else line.strokes = [];
     line.name = spec.name;
     line.opacity = spec.opacity;
     return line;
@@ -380,7 +381,9 @@ function createShape(spec: ShapeNode): SceneNode {
 
   node.name = spec.name;
   node.fills = spec.fill ? [toFigmaPaint(spec.fill) as Paint2] : [];
+  // 선이 없으면 명시적으로 비운다. createVector() 로 만든 노드는 기본 선을 달고 나온다.
   if (spec.stroke) applyStroke(node, spec.stroke);
+  else node.strokes = [];
   if (spec.shadow) {
     node.effects = [{
       type: 'DROP_SHADOW',
