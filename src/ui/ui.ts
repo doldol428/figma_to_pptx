@@ -46,10 +46,11 @@ function renderStaticText(): void {
   $('tabExport').textContent = t().tabExport;
   $('tabImport').textContent = t().tabImport;
   $('importTitle').textContent = t().tabImport;
-  $('importHint').textContent = t().dropHint;
   elPick.textContent = t().pickFile;
+  elImport.textContent = t().importButton;
   $('rangeLabel').textContent = t().slideRange;
   elRange.placeholder = t().slideRangeHint;
+  renderChosen();
 }
 
 /* ── 방향 전환 ───────────────────────────────────────────────── */
@@ -59,8 +60,11 @@ const elTabImport = $<HTMLButtonElement>('tabImport');
 const elPaneExport = $('paneExport');
 const elPaneImport = $('paneImport');
 const elPick = $<HTMLButtonElement>('pick');
+const elImport = $<HTMLButtonElement>('import');
 const elFile = $<HTMLInputElement>('file');
 const elRange = $<HTMLInputElement>('range');
+const elFileName = $('fileName');
+const elImportHint = $('importHint');
 
 function showTab(which: 'export' | 'import'): void {
   const isExport = which === 'export';
@@ -78,6 +82,22 @@ elTabImport.addEventListener('click', () => showTab('import'));
 
 /* ── 가져오기 ────────────────────────────────────────────────── */
 
+/**
+ * 고른 파일. 고르는 것과 가져오는 것을 나눈 이유는 내보내기 탭과 짜임을 맞추기 위해서다 —
+ * 머리 영역이 "무엇을 고를 것인가"를 보여주고, 아래 주 버튼이 실행한다.
+ */
+let chosen: File | null = null;
+
+function renderChosen(): void {
+  elFileName.textContent = chosen ? chosen.name : '—';
+  elImportHint.textContent = chosen
+    ? t().fileSize(fmt(chosen.size / 1024 / 1024))
+    : t().selectFile;
+  // 파일이 없을 때만 빨갛게 — 내보내기 탭에서 프레임 미선택을 알리는 방식과 같다.
+  elImportHint.classList.toggle('danger', !chosen);
+  elImport.disabled = busy || !chosen;
+}
+
 elPick.addEventListener('click', () => {
   if (!busy) elFile.click();
 });
@@ -85,28 +105,37 @@ elPick.addEventListener('click', () => {
 elFile.addEventListener('change', () => {
   const file = elFile.files?.[0];
   elFile.value = '';
-  if (file) void runImport(file);
-});
-
-async function runImport(file: File): Promise<void> {
-  if (busy) return;
+  if (!file) return;
   if (!/\.pptx$/i.test(file.name)) {
     showBlocked(t().notPptx);
     return;
   }
+  elBlocked.classList.add('hidden');
+  chosen = file;
+  renderChosen();
+  syncHeight();
+});
+
+elImport.addEventListener('click', () => {
+  if (!busy && chosen) void runImport(chosen);
+});
+
+async function runImport(file: File): Promise<void> {
+  if (busy) return;
 
   busy = true;
   elPick.disabled = true;
+  elImport.disabled = true;
   elWarnings.classList.add('hidden');
   elBlocked.classList.add('hidden');
-  elPick.textContent = t().parsing;
+  elImport.textContent = t().parsing;
 
   try {
     const buffer = await file.arrayBuffer();
     const doc = await readPptx(buffer, file.name, {
       only: parseSlideRange(elRange.value) ?? undefined,
       onProgress: (done, total) => {
-        elPick.textContent = t().reading(done, total);
+        elImport.textContent = t().reading(done, total);
       },
     });
 
@@ -114,7 +143,7 @@ async function runImport(file: File): Promise<void> {
     nextSlide = 0;
     nextLayout = 0;
     pendingWarnings = doc.warnings;
-    elPick.textContent = t().creating(0, doc.slides.length);
+    elImport.textContent = t().creating(0, doc.slides.length);
 
     toMain({
       type: 'importBegin',
@@ -172,7 +201,8 @@ function resetImport(): void {
   nextSlide = 0;
   nextLayout = 0;
   elPick.disabled = false;
-  elPick.textContent = t().pickFile;
+  elImport.textContent = t().importButton;
+  renderChosen();
 }
 
 function renderSelection(s: SelectionState): void {
@@ -335,7 +365,7 @@ window.onmessage = async (event: MessageEvent) => {
   }
 
   if (msg.type === 'createProgress') {
-    elPick.textContent = t().creating(msg.done, msg.total);
+    elImport.textContent = t().creating(msg.done, msg.total);
     sendNextSlide();
     return;
   }

@@ -50,13 +50,15 @@ export interface Strings {
   tabExport: string;
   tabImport: string;
   pickFile: string;
-  dropHint: string;
   reading: (done: number, total: number) => string;
   parsing: string;
   creating: (done: number, total: number) => string;
   imported: (slides: number) => string;
   importFailed: (err: string) => string;
   notPptx: string;
+  importButton: string;
+  selectFile: string;
+  fileSize: (mb: string) => string;
   slideRange: string;
   slideRangeHint: string;
   fontsMissing: (families: string) => string;
@@ -104,13 +106,15 @@ const KO: Strings = {
   tabExport: 'PPTX 로 내보내기',
   tabImport: 'PPTX 가져오기',
   pickFile: 'PPTX 파일 선택',
-  dropHint: '슬라이드가 프레임으로 들어옵니다',
   reading: (done, total) => `읽는 중… ${done}/${total}`,
   parsing: '파일 분석 중…',
   creating: (done, total) => `프레임 만드는 중… ${done}/${total}`,
   imported: (slides) => `슬라이드 ${slides}장을 가져왔습니다`,
   importFailed: (err) => `가져오기 실패: ${err}`,
   notPptx: '.pptx 파일만 가져올 수 있습니다',
+  importButton: 'PPTX 가져오기',
+  selectFile: '파일을 선택하세요.',
+  fileSize: (mb) => `${mb} MB`,
   slideRange: '슬라이드',
   slideRangeHint: '전체 (예: 1, 3-5)',
   fontsMissing: (families) =>
@@ -176,13 +180,15 @@ const EN: Strings = {
   tabExport: 'Export to PPTX',
   tabImport: 'Import PPTX',
   pickFile: 'Choose a PPTX file',
-  dropHint: 'Slides come in as frames',
   reading: (done, total) => `Reading… ${done}/${total}`,
   parsing: 'Reading the file…',
   creating: (done, total) => `Creating frames… ${done}/${total}`,
   imported: (slides) => `${slides === 1 ? '1 slide' : `${slides} slides`} imported`,
   importFailed: (err) => `Import failed: ${err}`,
   notPptx: 'Only .pptx files can be imported',
+  importButton: 'Import PPTX',
+  selectFile: 'Choose a file.',
+  fileSize: (mb) => `${mb} MB`,
   slideRange: 'Slides',
   slideRangeHint: 'All (e.g. 1, 3-5)',
   fontsMissing: (families) => `Fonts not available here were substituted: ${families}`,

@@ -58,7 +58,21 @@
     cursor: pointer;
   }
   /* 두 탭의 주 버튼은 같은 규격이어야 한다 — 탭을 오가며 크기가 달라지면 어색하다. */
-  #export, #pick { display: block; width: 100%; }
+  #export, #import { display: block; width: 100%; }
+
+  /* 머리 영역도 같은 높이로 잡는다. 탭을 옮길 때 아래 것들이 덜컹이지 않게. */
+  .pane-head { min-height: 90px; }
+  .head-row { display: flex; align-items: center; gap: 8px; }
+  /* 파일명은 남는 폭을 다 쓰고, 길면 말줄임 */
+  #fileName {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pick { flex: none; height: 26px; font-weight: 400; }
   .primary {
     border: 1px solid transparent;
     background: var(--figma-color-bg-brand, #0d99ff);
@@ -202,7 +216,7 @@
   </div>
 
   <div id="paneExport">
-  <div class="card">
+  <div class="card pane-head">
     <h1 id="slideSizeTitle"></h1>
     <div class="size" id="size">—</div>
     <div class="sub" id="detail"></div>
@@ -223,16 +237,23 @@
   </div>
 
   <div id="paneImport" class="hidden">
-    <div class="card">
+    <!-- 내보내기 탭과 같은 짜임 — 머리 영역(선택한 것) · 옵션 한 줄 · 주 버튼 -->
+    <div class="card pane-head">
       <h1 id="importTitle"></h1>
+      <div class="head-row">
+        <div class="size" id="fileName">—</div>
+        <button type="button" class="control secondary pick" id="pick"></button>
+      </div>
       <div class="sub" id="importHint"></div>
     </div>
+
     <div class="field">
       <span class="field-label" id="rangeLabel"></span>
       <input type="text" class="control secondary field-input" id="range" inputmode="numeric" />
     </div>
+
     <input type="file" id="file" accept=".pptx" hidden />
-    <button type="button" class="control primary" id="pick"></button>
+    <button type="button" class="control primary" id="import" disabled></button>
   </div>
 
   <div class="card hidden" id="warnings"></div>
