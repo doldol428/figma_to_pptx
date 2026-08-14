@@ -96,6 +96,18 @@ function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale): void {
 
 function addSlideTo(pptx: PptxGenJS, slide: SlideSpec, scale: Scale): void {
   const s = slide.master ? pptx.addSlide({ masterName: slide.master }) : pptx.addSlide();
+
+  /*
+   * 슬라이드 번호는 레이아웃에만 둔다.
+   *
+   * PptxGenJS 는 레이아웃의 slideNumber 를 각 장에도 물려 자리표시자를 하나 더 그리는데,
+   * 그 도형 id 가 25 로 박혀 있다. 일반 도형은 `순번 + 2` 라 **24번째 도형이 정확히 25** 가 되어
+   * 부딪히고, id 가 겹친 슬라이드를 PowerPoint 는 "읽을 수 없는 내용"으로 지우며 복구 창을 띄운다.
+   * (실측: 232장 중 180장에서 충돌. 슬라이드 한 장에 도형이 58개였다.)
+   *
+   * 원본 덱도 번호를 레이아웃에만 두고 슬라이드에는 두지 않는다 — 그 편이 옳기도 하다.
+   */
+  s.slideNumber = null as unknown as PptxGenJS.SlideNumberProps;
   if (slide.fill.kind === 'solid') {
     s.background = { color: slide.fill.color, transparency: slide.fill.transparency };
   }

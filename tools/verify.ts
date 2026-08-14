@@ -574,6 +574,54 @@ async function main(): Promise<void> {
   checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
   checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
 
+  /* ── 도형 id 충돌 ────────────────────────────────────────────── */
+
+  /*
+   * OOXML 은 슬라이드 안에서 도형 id 가 유일해야 한다. 겹치면 PowerPoint 가 그 도형을
+   * "읽을 수 없는 내용"으로 지우고 복구 창을 띄운다.
+   *
+   * PptxGenJS 는 일반 도형에 `순번 + 2` 를, 슬라이드 번호 자리표시자에는 25 를 준다.
+   * 그래서 도형이 24개를 넘는 순간 부딪힌다. 30개를 깔아 그 지점을 지나가게 한다.
+   */
+  const crowded: Doc = {
+    ...doc,
+    masters: [{
+      name: '#레이아웃/번호',
+      items: [],
+      slideNumber: {
+        box: box(mm(100), mm(285), mm(10), mm(5)),
+        fontFace: 'Arial', fontSize: 9, color: '404040', align: 'center',
+      },
+    }],
+    slides: [{
+      name: '도형 30개',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      master: '#레이아웃/번호',
+      items: Array.from({ length: 30 }, (_, i) => ({
+        type: 'shape' as const,
+        name: `도형 ${i}`,
+        box: box(10 + i, 10, 20, 20),
+        geom: { kind: 'rect' as const },
+        fill: { kind: 'solid' as const, color: '888888', transparency: 0 },
+      })),
+    }],
+  };
+  const crowdOut = await render(crowded);
+  const crowdIds = [...crowdOut.xml.matchAll(/<p:cNvPr id="(\d+)"/g)].map((m) => m[1]);
+  const crowdLayouts = Object.keys(crowdOut.zip.files).filter((n) => /slideLayout\d+\.xml$/.test(n));
+  const numberedLayout = await Promise.all(
+    crowdLayouts.map(async (n) => crowdOut.zip.file(n)!.async('string')),
+  );
+
+  console.log('\n도형 id 충돌 (도형 30개 + 슬라이드 번호)');
+  check('도형 id 가 전부 다름', new Set(crowdIds).size, crowdIds.length);
+  checkTruthy('슬라이드에는 번호 자리표시자를 넣지 않음', crowdOut.xml.indexOf('type="sldNum"') < 0);
+  // 번호 자체는 레이아웃에 남아 PowerPoint 가 장마다 채운다.
+  checkTruthy(
+    '레이아웃에는 slidenum 필드가 남음',
+    numberedLayout.some((x) => x.indexOf('type="slidenum"') >= 0),
+  );
+
   /* ── 여러 장 흘려보내기 ──────────────────────────────────────── */
 
   /*
