@@ -11,6 +11,8 @@
 import { readFile } from 'node:fs/promises';
 import JSZip from 'jszip';
 import { deep, num, one, parseXml, type XNode } from '../src/import/xml';
+import { presetPath } from '../src/import/preset';
+import { pathBounds } from '../src/import/pathbox';
 
 const EMU_MM = 25.4 / 914400;
 const mm = (v: number): string => (v * EMU_MM).toFixed(2);
@@ -26,6 +28,24 @@ interface Shape {
   rot: number;
   flipH: boolean;
   flipV: boolean;
+  adj: Record<string, number>;
+}
+
+/**
+ * preset 도형이 상자 안에서 **실제로 그리는** 범위.
+ *
+ * 여러 preset 은 상자를 다 채우지 않는다. 기본 `arc` 는 12시에서 3시까지 90°라 오른쪽 위
+ * 사분면만 쓰고, `mathMinus` 는 가운데 가로 막대만 쓴다. Figma 벡터는 경로가 차지하는 만큼만
+ * 크기를 갖기 때문에, 왕복하고 나면 상자가 그 범위로 조여진다 — 그림은 그대로다.
+ *
+ * 그래서 상자끼리 맞대면 멀쩡한 도형이 13mm 어긋난 것으로 잡힌다. 원본이 어디를 그리는지
+ * 계산해서 그 자리와 비교한다.
+ */
+function drawnBox(s: Shape): { x: number; y: number; w: number; h: number } {
+  const path = presetPath(s.kind, s.w, s.h, s.adj);
+  if (!path) return { x: s.x, y: s.y, w: s.w, h: s.h };
+  const bb = pathBounds(path.data);
+  return { x: s.x + bb.x, y: s.y + bb.y, w: bb.w, h: bb.h };
 }
 
 /**
@@ -96,6 +116,16 @@ function textOf(node: XNode | null): string {
   return s;
 }
 
+/** `<a:avLst><a:gd name="adj" fmla="val 25000"/>` 를 읽는다 */
+function adjOf(el: XNode): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const gd of deep(one(el, 'spPr'), 'avLst')?.children ?? []) {
+    const m = /^val\s+(-?\d+)/.exec(gd.attrs.fmla ?? '');
+    if (gd.attrs.name && m) out[gd.attrs.name] = Number(m[1]);
+  }
+  return out;
+}
+
 function geomOf(sp: XNode): string {
   const spPr = one(sp, 'spPr');
   if (one(spPr, 'custGeom')) return 'custGeom';
@@ -131,6 +161,7 @@ function shapesOf(tree: XNode | null, frame: Frame, out: Shape[]): void {
       rot: num(xfrm?.attrs.rot),
       flipH: xfrm?.attrs.flipH === '1',
       flipV: xfrm?.attrs.flipV === '1',
+      adj: adjOf(el),
     });
   }
 }
@@ -221,6 +252,7 @@ let paired = 0; let lost = 0; let added = 0;
 const offsets: Array<{ d: number; dx: number; dy: number; dw: number; dh: number; label: string }> = [];
 const missing: string[] = [];
 const lineGaps: Array<{ d: number; label: string }> = [];
+const drawnGaps: Array<{ d: number; label: string }> = [];
 
 for (let i = 0; i < Math.min(a.slides.length, b.slides.length); i++) {
   const byName = new Map<string, Shape[]>();
@@ -275,6 +307,14 @@ for (let i = 0; i < Math.min(a.slides.length, b.slides.length); i++) {
       dh: Math.abs(s.h - hit.h),
       label: `${i + 1}장 ${s.kind} "${s.name}"`,
     });
+
+    // 상자가 아니라 **그리는 자리** 로도 잰다
+    const drawn = drawnBox(s);
+    drawnGaps.push({
+      d: Math.hypot(drawn.x - hit.x, drawn.y - hit.y)
+        + Math.hypot(drawn.w - hit.w, drawn.h - hit.h),
+      label: `${i + 1}장 ${s.kind} "${s.name}"`,
+    });
   }
   added += [...byName.values()].reduce((t, v) => t + v.length, 0);
 }
@@ -294,6 +334,26 @@ console.log(`  0.1mm 이내 ${within(0.1)} · 0.5mm 이내 ${within(0.5)} · 1mm
 console.log('  가장 많이 어긋난 것');
 for (const o of sorted.slice(-8).reverse()) {
   console.log(`    ${mm(o.d).padStart(8)} mm   ${o.label}  (크기차 ${mm(o.dw)} × ${mm(o.dh)} mm)`);
+}
+
+/*
+ * 위는 상자끼리 맞댄 값이다. 상자를 다 채우지 않는 preset(arc·mathMinus·curvedArrow …)은
+ * 왕복하면 상자가 그림 크기로 조여져 멀쩡한데도 어긋난 것으로 잡힌다.
+ * 아래는 원본이 **어디를 그리는지** 계산해서 그 자리와 비교한 값이다.
+ */
+if (drawnGaps.length) {
+  const ds = [...drawnGaps].sort((x, y) => x.d - y.d);
+  const dat = (p: number): string => mm(ds[Math.floor((ds.length - 1) * p)].d);
+  const dw = (limit: number): string =>
+    `${((drawnGaps.filter((o) => o.d * EMU_MM <= limit).length / drawnGaps.length) * 100).toFixed(1)}%`;
+  console.log('\n  그리는 자리로 다시 잰 값 (상자가 조여진 것은 어긋남이 아니다)');
+  console.log(`    중앙값 ${dat(0.5)} · 90% ${dat(0.9)} · 99% ${dat(0.99)} · 최대 ${dat(1)} mm`);
+  console.log(`    0.1mm 이내 ${dw(0.1)} · 0.5mm 이내 ${dw(0.5)} · 1mm 이내 ${dw(1)}`);
+  console.log('    남은 것');
+  for (const o of ds.slice(-6).reverse()) {
+    if (o.d * EMU_MM <= 0.1) break;
+    console.log(`      ${mm(o.d).padStart(8)} mm   ${o.label}`);
+  }
 }
 if (lineGaps.length) {
   const ls = [...lineGaps].sort((x, y) => x.d - y.d);
