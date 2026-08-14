@@ -61,4 +61,14 @@ function show(nodes: ImportNode[], depth: number): void {
   }
 }
 
+const layout = doc.layouts.find((l) => l.key === slide.layoutKey);
+if (layout) {
+  console.log(`── 레이아웃 "${layout.name}" (${layout.key}) — 컴포넌트로 공유 ──`);
+  show(layout.nodes, 0);
+}
+if (slide.perSlideNodes.length > 0) {
+  console.log('\n── 장마다 따로 (슬라이드 번호 등) ──');
+  show(slide.perSlideNodes, 0);
+}
+console.log('\n── 이 장의 내용 ──');
 show(slide.nodes, 0);

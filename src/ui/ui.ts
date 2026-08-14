@@ -116,6 +116,7 @@ async function runImport(file: File): Promise<void> {
 
     pending = doc;
     nextSlide = 0;
+    nextLayout = 0;
     pendingWarnings = doc.warnings;
     elPick.textContent = t().creating(0, doc.slides.length);
 
@@ -140,14 +141,25 @@ let pendingWarnings: Warning[] = [];
 let pending: ImportDoc | null = null;
 let nextSlide = 0;
 
+let nextLayout = 0;
+
 /**
- * 다음 슬라이드 한 장을 보낸다.
+ * 다음 조각 하나를 보낸다 — 레이아웃 먼저, 그 다음 슬라이드.
  *
  * 58장을 한꺼번에 밀어 넣으면 이미지가 base64 로 부푼 만큼(실측 115MB) 다리가 막힌다.
- * 보낸 장은 즉시 비워 메모리도 같이 놓아준다.
+ * 보낸 것은 즉시 비워 메모리도 같이 놓아준다.
+ * 레이아웃을 앞세우는 이유는 슬라이드가 인스턴스를 놓을 때 컴포넌트가 이미 있어야 하기 때문이다.
  */
 function sendNextSlide(): void {
   if (!pending) return;
+
+  if (nextLayout < pending.layouts.length) {
+    const layout = pending.layouts[nextLayout++];
+    toMain({ type: 'importLayout', layout });
+    pending.layouts[nextLayout - 1] = { key: layout.key, name: layout.name, nodes: [] };
+    return;
+  }
+
   if (nextSlide >= pending.slides.length) {
     toMain({ type: 'importEnd' });
     return;
@@ -155,13 +167,14 @@ function sendNextSlide(): void {
   const index = nextSlide++;
   const slide = pending.slides[index];
   toMain({ type: 'importSlide', index, slide });
-  pending.slides[index] = { name: slide.name, nodes: [] };
+  pending.slides[index] = { name: slide.name, nodes: [], perSlideNodes: [] };
 }
 
 function resetImport(): void {
   busy = false;
   pending = null;
   nextSlide = 0;
+  nextLayout = 0;
   elPick.disabled = false;
   elPick.textContent = t().pickFile;
 }

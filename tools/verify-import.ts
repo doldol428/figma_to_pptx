@@ -63,11 +63,20 @@ function walk(nodes: ImportNode[], depth: number): void {
   }
 }
 
-for (const s of doc.slides) walk(s.nodes, 1);
+for (const l of doc.layouts) walk(l.nodes, 1);
+for (const s of doc.slides) { walk(s.perSlideNodes, 1); walk(s.nodes, 1); }
 
 console.log(`■ ${doc.fileName}`);
 console.log(`  슬라이드  ${doc.slides.length}장 · ${(doc.widthPt * EMU_MM).toFixed(1)} × ${(doc.heightPt * EMU_MM).toFixed(1)} mm`);
 console.log(`  파싱      ${ms.toFixed(0)} ms`);
+
+console.log(`\n■ 레이아웃 ${doc.layouts.length}종 (공통 요소 → 컴포넌트 1개 + 각 장에 인스턴스)`);
+for (const l of doc.layouts) {
+  const users = doc.slides.filter((s) => s.layoutKey === l.key).length;
+  console.log(`  ${l.key.padEnd(20)} 노드 ${String(l.nodes.length).padStart(3)}개 · ${users}장이 사용 · "${l.name}"`);
+}
+const perSlide = doc.slides.reduce((n, s) => n + s.perSlideNodes.length, 0);
+console.log(`  장마다 따로 만드는 노드 ${perSlide}개 (슬라이드 번호 등, 공유 불가)`);
 
 console.log('\n■ 노드');
 for (const [k, v] of [...kinds].sort((a, b) => b[1] - a[1])) {

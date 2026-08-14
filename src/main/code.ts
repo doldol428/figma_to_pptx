@@ -80,6 +80,18 @@ const handle = async (msg: UiToMain): Promise<void> => {
     return;
   }
 
+  if (msg.type === 'importLayout') {
+    if (!session) return;
+    try {
+      await session.addLayout(msg.layout);
+    } catch (err) {
+      post({ type: 'error', message: t().importFailed(String(err)) });
+    }
+    // 레이아웃도 슬라이드와 같은 확인 신호로 다음 조각을 부른다.
+    post({ type: 'createProgress', done: session.frames.length, total: session.total });
+    return;
+  }
+
   if (msg.type === 'importSlide') {
     if (!session) return;
     try {

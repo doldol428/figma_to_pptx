@@ -69,6 +69,11 @@ interface NodeBase {
   place: Placement;
   /** 0.0 - 1.0 */
   opacity: number;
+  /**
+   * 장마다 값이 달라 레이아웃 컴포넌트에 넣을 수 없는 노드 (슬라이드 번호).
+   * 레이아웃에서 왔더라도 이것만은 슬라이드에 따로 놓는다.
+   */
+  perSlide?: boolean;
 }
 
 /**
@@ -183,9 +188,24 @@ export type ImportNode =
   | TableNodeSpec
   | GroupNodeSpec;
 
+/**
+ * 여러 슬라이드가 공유하는 페이지 공통 요소. PPTX 의 slideLayout 파트 하나에 해당한다.
+ * Figma 에서는 컴포넌트 하나가 되고, 각 슬라이드에는 인스턴스만 놓인다.
+ */
+export interface ImportLayout {
+  /** 레이아웃 파트 파일명 — 슬라이드가 이 값으로 자기 레이아웃을 가리킨다 */
+  key: string;
+  name: string;
+  nodes: ImportNode[];
+}
+
 export interface ImportSlide {
   name: string;
   fill?: Paint;
+  /** 이 장이 쓰는 레이아웃. 없으면 공통 요소가 없는 장이다. */
+  layoutKey?: string;
+  /** 레이아웃에서 왔지만 장마다 달라 공유할 수 없는 것 (슬라이드 번호) */
+  perSlideNodes: ImportNode[];
   nodes: ImportNode[];
 }
 
@@ -194,6 +214,8 @@ export interface ImportDoc {
   widthPt: number;
   heightPt: number;
   fileName: string;
+  /** 쓰인 레이아웃들 — 슬라이드보다 먼저 만들어야 인스턴스를 놓을 수 있다 */
+  layouts: ImportLayout[];
   slides: ImportSlide[];
   warnings: Warning[];
   /** 파일에서 쓰인 폰트 이름 — main 스레드가 로드 가능 여부를 확인한다 */

@@ -2,7 +2,7 @@
 import { t } from '../shared/i18n';
 import type { Warning } from '../shared/ir';
 import type {
-  ImportDoc, ImportNode, ImportSlide, Paint, Paragraph, Placement, ShapeGeometry,
+  ImportDoc, ImportLayout, ImportNode, ImportSlide, Paint, Paragraph, Placement, ShapeGeometry,
   ShadowSpec, ShapeNode, StrokeSpec, TableCell, TextRun,
 } from '../shared/importir';
 import {
@@ -174,6 +174,11 @@ export async function readPptx(
     .filter((s) => !opts.only || opts.only.has(s.number));
 
   const slides: ImportSlide[] = [];
+  /** 레이아웃 파트당 한 번만 읽는다 — 58장이 7종을 나눠 쓴다 */
+  const layouts = new Map<string, ImportLayout>();
+  /** 그 레이아웃에서 장마다 다시 읽어야 하는 자식의 위치 (슬라이드 번호 등) */
+  const perSlideIndices = new Map<string, number[]>();
+  const shared: ImportNode[] = [];
   for (let i = 0; i < wanted.length; i++) {
     opts.onProgress?.(i, wanted.length);
     const { path: slidePath, number } = wanted[i];
@@ -183,22 +188,50 @@ export async function readPptx(
     const slideXml = await readXml(zip, slidePath);
     const rels = await readRels(zip, slidePath);
     const layout = await layoutFor(zip, rels);
+    const layoutKey = layoutKeyFor(rels);
 
     const nodes: ImportNode[] = [];
 
     /*
-     * 레이아웃의 고정 요소를 먼저 깐다 — 머리글·꼬리말·괘선처럼 슬라이드에는 없고
-     * 레이아웃에만 있는 것들이다. 이걸 빼면 페이지 상단이 통째로 비어 보인다.
+     * 레이아웃의 고정 요소 — 머리글·꼬리말·괘선처럼 슬라이드에는 없고 레이아웃에만 있는 것들이다.
+     * 이걸 빼면 페이지 상단이 통째로 비어 보인다.
+     *
+     * 여러 장이 같은 레이아웃을 공유하므로 레이아웃당 한 번만 읽어 컴포넌트 재료로 넘긴다.
+     * 다만 슬라이드 번호처럼 장마다 값이 달라지는 것은 공유할 수 없어 따로 뽑아 둔다.
      *
      * 자리표시자(ph)는 제외한다. 슬라이드가 같은 자리에 자기 내용을 이미 넣기 때문에
      * 함께 넣으면 "제목을 입력하세요" 같은 빈 껍데기가 겹쳐 올라온다.
      */
     const layoutRels = layout ? await layoutRelsFor(zip, rels) : {};
-    for (const child of deep(layout, 'spTree')?.children ?? []) {
+    const perSlideNodes: ImportNode[] = [];
+    const children = deep(layout, 'spTree')?.children ?? [];
+    const known = layoutKey ? perSlideIndices.get(layoutKey) : undefined;
+    const first: number[] = [];
+
+    for (let c = 0; c < children.length; c++) {
+      // 이미 만들어 둔 레이아웃이면, 장마다 달라지는 것만 다시 읽으면 된다.
+      if (known && known.indexOf(c) < 0) continue;
+      const child = children[c];
       if (isPlaceholder(child)) continue;
       const node = await readNode(child, IDENTITY, ctx, layoutRels, null, null);
-      if (node) nodes.push(node);
+      if (!node) continue;
+      if (node.perSlide) {
+        perSlideNodes.push(node);
+        first.push(c);
+      } else if (!known) {
+        shared.push(node);
+      }
     }
+
+    if (layoutKey && !known) {
+      perSlideIndices.set(layoutKey, first);
+      layouts.set(layoutKey, {
+        key: layoutKey,
+        name: deep(layout, 'cSld')?.attrs.name || layoutKey.replace(/\.xml$/, ''),
+        nodes: shared.splice(0, shared.length),
+      });
+    }
+    shared.length = 0;
 
     const tree = deep(slideXml, 'spTree');
     if (tree) {
@@ -211,6 +244,8 @@ export async function readPptx(
     slides.push({
       name: `${number}. ${slideTitle(tree) || ctx.slideName}`,
       fill: readSlideBackground(slideXml, ctx) ?? undefined,
+      layoutKey: layoutKey ?? undefined,
+      perSlideNodes,
       nodes,
     });
   }
@@ -225,6 +260,7 @@ export async function readPptx(
     widthPt,
     heightPt,
     fileName,
+    layouts: Array.from(layouts.values()),
     slides,
     warnings,
     fonts: Array.from(fonts).sort(),
@@ -283,6 +319,12 @@ function isPlaceholder(el: XNode): boolean {
     ?? xpath(el, 'nvGrpSpPr', 'nvPr')
     ?? xpath(el, 'nvCxnSpPr', 'nvPr');
   return !!one(nvPr, 'ph');
+}
+
+/** 이 슬라이드가 쓰는 레이아웃 파트의 파일명 — 같은 레이아웃을 쓰는 장을 묶는 열쇠 */
+function layoutKeyFor(rels: Record<string, string>): string | null {
+  const target = Object.values(rels).find((t) => t.indexOf('slideLayout') >= 0);
+  return target ? (target.split('/').pop() ?? null) : null;
 }
 
 /** 레이아웃 파트의 관계 — 레이아웃 안 그림을 찾으려면 슬라이드 것이 아니라 이쪽이 필요하다 */
@@ -511,7 +553,7 @@ async function readShape(
   if (children.length === 0) return null;
   if (children.length === 1) return children[0];
   // 면과 글자를 함께 가진 도형 — Figma 에는 도형 안의 텍스트가 없으므로 묶어서 낸다.
-  return { type: 'group', name, place, opacity, children };
+  return { type: 'group', name, place, opacity, children, perSlide: anyPerSlide(children) };
 }
 
 function resolveGeometry(
@@ -664,7 +706,12 @@ async function readGroup(
   }
 
   if (children.length === 0) return null;
-  return { type: 'group', name, place, opacity: 1, children };
+  return { type: 'group', name, place, opacity: 1, children, perSlide: anyPerSlide(children) };
+}
+
+/** 장마다 달라지는 것이 하나라도 있으면 그 묶음 전체를 공유할 수 없다. */
+function anyPerSlide(children: ImportNode[]): boolean {
+  return children.some((c) => c.perSlide);
 }
 
 const MIME: Record<string, string> = {
@@ -885,6 +932,11 @@ function readTextBody(
     name,
     place,
     opacity: 1,
+    /*
+     * 슬라이드 번호 필드는 장마다 값이 다르다. 레이아웃에서 왔더라도 공용 컴포넌트에
+     * 넣으면 58장이 전부 같은 번호를 달게 되므로, 여기서 표시해 두고 슬라이드마다 따로 만든다.
+     */
+    perSlide: all(txBody, 'p').some((p) => all(p, 'fld').some((f) => f.attrs.type === 'slidenum')),
     paragraphs,
     vertical: anchor === 'ctr' ? 'CENTER' : anchor === 'b' ? 'BOTTOM' : 'TOP',
     insets: {

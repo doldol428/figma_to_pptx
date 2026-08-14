@@ -1,7 +1,8 @@
 ﻿import type {
-  GradientPaint, ImageNodeSpec, ImportNode, ImportSlide, Paint, Placement,
+  GradientPaint, ImageNodeSpec, ImportLayout, ImportNode, ImportSlide, Paint, Placement,
   ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
 } from '../shared/importir';
+import { KEY, NAME, layoutName } from '../shared/roles';
 import { aliasesFor, latinHead, pickFont } from './fontalias';
 
 /**
@@ -34,6 +35,8 @@ export class ImportSession {
   private readonly fonts = new FontBook();
   private readonly origin = nextFreeSpot();
   readonly frames: FrameNode[] = [];
+  /** 레이아웃 파트 → 컴포넌트. 슬라이드는 여기에 인스턴스만 놓는다. */
+  private readonly layouts = new Map<string, ComponentNode>();
 
   private constructor(private readonly meta: ImportMeta) {}
 
@@ -50,6 +53,50 @@ export class ImportSession {
   /** 노드 생성에 실패한 항목 — 한 개가 터져도 나머지는 살린다 */
   readonly failures: string[] = [];
 
+  /**
+   * 페이지 공통 요소를 컴포넌트 하나로 만든다.
+   *
+   * PPTX 의 slideLayout 과 1:1 이다. 같은 레이아웃을 쓰는 장이 인스턴스를 놓으므로
+   * 머리글을 한 번 고치면 그 레이아웃을 쓰는 모든 장에 반영되고, 다시 내보낼 때도
+   * 어느 것이 공통 서식인지 판단할 필요 없이 레이아웃 파트로 되돌릴 수 있다.
+   */
+  async addLayout(layout: ImportLayout): Promise<void> {
+    const component = figma.createComponent();
+    component.name = layoutName(layout.name);
+    component.resizeWithoutConstraints(
+      Math.max(1, this.meta.widthPt),
+      Math.max(1, this.meta.heightPt),
+    );
+    // 슬라이드 줄 왼쪽에 세로로 쌓는다 — 캔버스에서 원본과 섞이지 않게.
+    component.x = this.origin.x - (this.meta.widthPt + GAP) * 2;
+    component.y = this.origin.y + this.layouts.size * (this.meta.heightPt + GAP);
+    component.fills = [];
+    component.clipsContent = false;
+    component.setPluginData(KEY.role, 'layout');
+    component.setPluginData(KEY.layout, layout.key);
+    figma.currentPage.appendChild(component);
+
+    await this.fill(component, layout.nodes, component.name);
+    this.layouts.set(layout.key, component);
+  }
+
+  /** 노드들을 부모 안에 만들어 넣는다. 하나가 터져도 나머지는 살린다. */
+  private async fill(parent: FrameNode | ComponentNode, nodes: ImportNode[], where: string): Promise<void> {
+    for (const node of nodes) {
+      try {
+        const created = await createNode(node, this.fonts);
+        for (const n of created) {
+          const { x, y } = n;
+          parent.appendChild(n);
+          n.x = x;
+          n.y = y;
+        }
+      } catch (err) {
+        this.failures.push(`${where} › ${node.name} (${node.type}): ${String(err)}`);
+      }
+    }
+  }
+
   async addSlide(slide: ImportSlide, index: number): Promise<void> {
     const frame = figma.createFrame();
     frame.name = slide.name;
@@ -63,25 +110,43 @@ export class ImportSession {
     frame.fills = slide.fill
       ? [toFigmaPaint(slide.fill) as Paint2]
       : [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    frame.setPluginData(KEY.slide, String(index + 1));
     figma.currentPage.appendChild(frame);
+
+    /*
+     * 공통 요소는 인스턴스 하나로 깔고 시작한다. 맨 아래에 놓아야 슬라이드 내용이 그 위에 앉는다.
+     * (레이아웃 컴포넌트가 아직 없으면 그냥 넘어간다 — 공통 요소가 없는 문서다.)
+     */
+    const component = slide.layoutKey ? this.layouts.get(slide.layoutKey) : undefined;
+    if (component) {
+      const instance = component.createInstance();
+      instance.setPluginData(KEY.role, 'layout');
+      instance.setPluginData(KEY.layout, slide.layoutKey ?? '');
+      frame.appendChild(instance);
+      instance.x = 0;
+      instance.y = 0;
+    }
+
+    /*
+     * 슬라이드 번호처럼 장마다 값이 다른 것은 컴포넌트에 넣을 수 없어 여기서 따로 만든다.
+     * 이름을 규칙대로 붙여 두면 다시 내보낼 때 필드로 되돌릴 수 있다.
+     */
+    for (const node of slide.perSlideNodes) {
+      const before = frame.children.length;
+      await this.fill(frame, [node], slide.name);
+      for (let i = before; i < frame.children.length; i++) {
+        const n = frame.children[i];
+        n.setPluginData(KEY.pptxName, n.name);
+        n.setPluginData(KEY.role, 'slideNumber');
+        n.name = NAME.slideNumber;
+      }
+    }
 
     /*
      * 노드 하나가 터져도 슬라이드 전체를 잃지 않는다.
      * 실패는 삼키지 않고 어느 노드였는지 이름과 함께 보고한다 — 조용히 빠지면 원인을 못 찾는다.
      */
-    for (const node of slide.nodes) {
-      try {
-        const created = await createNode(node, this.fonts);
-        for (const n of created) {
-          const { x, y } = n;
-          frame.appendChild(n);
-          n.x = x;
-          n.y = y;
-        }
-      } catch (err) {
-        this.failures.push(`${slide.name} › ${node.name} (${node.type}): ${String(err)}`);
-      }
-    }
+    await this.fill(frame, slide.nodes, slide.name);
 
     this.frames.push(frame);
   }

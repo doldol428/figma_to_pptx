@@ -216,6 +216,8 @@ export type UiToMain =
     fonts: string[];
     fontAliases: Record<string, string>;
   }
+  /** 레이아웃 컴포넌트를 먼저 만든다 — 슬라이드가 인스턴스를 놓으려면 이미 있어야 한다 */
+  | { type: 'importLayout'; layout: ImportDoc['layouts'][number] }
   | { type: 'importSlide'; index: number; slide: ImportDoc['slides'][number] }
   | { type: 'importEnd' }
   /** Figma 가 인식하는 폰트 목록 요청 — 이름이 안 맞을 때 실제 등록명을 확인하는 용도 */
