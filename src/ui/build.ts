@@ -253,12 +253,28 @@ interface Position {
   flipV?: boolean;
 }
 
+/** 1 EMU 를 inch 로. 좌표계에서 0 이 되면 안 되는 값의 하한. */
+const MIN_EMU = 1 / 914400;
+
+/**
+ * PptxGenJS 에 넘길 수 있는 inch 값의 한계.
+ *
+ * `getSmartParseNumber` 는 100 미만이면 inch 로 보고 EMU 로 바꾸지만, 100 이상이면
+ * **이미 EMU 인 줄 알고 그대로** 쓴다 — 반올림도 하지 않는다. 그래서 100인치를 넘는 값이
+ * 하나라도 섞이면 `x="538.5815972222222"` 같은 소수점 좌표가 나가고, OOXML 좌표는 정수여야
+ * 하므로 PowerPoint 가 파일 복구를 요구한다.
+ *
+ * 100인치를 넘는 위치는 어차피 슬라이드 밖이다. 화면 밖으로 밀어두되 파일은 성하게 둔다.
+ */
+const MAX_IN = 99.99;
+const safeIn = (v: number): number => Math.max(-MAX_IN, Math.min(MAX_IN, v));
+
 function position(box: Box, s: Scale): Position {
   const pos: Position = {
-    x: s.x(box.x),
-    y: s.y(box.y),
-    w: s.len(box.w),
-    h: s.len(box.h),
+    x: safeIn(s.x(box.x)),
+    y: safeIn(s.y(box.y)),
+    w: safeIn(s.len(box.w)),
+    h: safeIn(s.len(box.h)),
   };
   if (box.rot !== 0) pos.rotate = box.rot;
   if (box.flipH) pos.flipH = true;
@@ -316,6 +332,14 @@ function shapeSpec(
     case 'custom':
       shape = CUST_GEOM;
       opts.points = toPoints(item.geom.points, s);
+      /*
+       * custGeom 은 도형 상자가 곧 경로의 좌표계다. 한 변이 0 이면 `<a:path w=".." h="0">` 이
+       * 되어 PowerPoint 가 경로를 펴지 못하고 파일 복구를 요구한다 — 가로로 곧은 선을 벡터로
+       * 그린 도형이 그렇다 (실측 496개). 눈에 안 보일 만큼만 띄워 준다.
+       * prstGeom 은 높이 0 이어도 괜찮아서 (직선 연결선이 그렇다) 여기서만 손본다.
+       */
+      opts.w = Math.max(opts.w as number, MIN_EMU);
+      opts.h = Math.max(opts.h as number, MIN_EMU);
       break;
     default:
       shape = pptx.ShapeType.rect;

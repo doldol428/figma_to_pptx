@@ -574,6 +574,45 @@ async function main(): Promise<void> {
   checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
   checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
 
+  /* ── PowerPoint 가 복구를 요구하는 값들 ──────────────────────── */
+
+  /*
+   * OOXML 좌표는 정수이고, custGeom 은 도형 상자가 곧 경로의 좌표계라 한 변도 0 이면 안 된다.
+   * 둘 다 실제 파일에서 복구 창을 띄웠던 원인이다.
+   */
+  const nasty: Doc = {
+    ...doc,
+    slides: [{
+      name: '험한 값',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [
+        // 가로로 곧은 벡터 — 높이가 0 이라 경로 좌표계가 무너진다
+        {
+          type: 'shape', name: '납작한 경로', box: box(10, 10, 200, 0),
+          geom: { kind: 'custom', points: [
+            { x: 0, y: 0, moveTo: true }, { x: 200, y: 0 },
+          ] },
+          fill: { kind: 'none' },
+          stroke: { color: '808080', transparency: 0, width: 1, dashType: 'solid' },
+        },
+        // 슬라이드 한참 밖 — inch 로 100 을 넘으면 PptxGenJS 가 EMU 로 오해한다
+        {
+          type: 'shape', name: '멀리 간 것', box: box(50000, 50000, 20, 20),
+          geom: { kind: 'rect' },
+          fill: { kind: 'solid', color: '000000', transparency: 0 },
+        },
+      ],
+    }],
+  };
+  const nastyOut = await render(nasty);
+
+  console.log('\nPowerPoint 가 거부하는 값');
+  // 좌표·크기 자리에 소수점이 있으면 스키마 위반이다
+  const fractional = /<a:(?:off|ext) (?:x|cx)="-?\d+\.\d+"|<a:(?:off|ext) [^>]*(?:y|cy)="-?\d+\.\d+"/.test(nastyOut.xml);
+  checkTruthy('좌표에 소수점이 없음', !fractional);
+  checkTruthy('경로 상자에 0 이 없음', !/<a:path w="0"|<a:path [^>]*h="0"/.test(nastyOut.xml));
+  checkTruthy('납작한 벡터도 custGeom 으로 나감', nastyOut.xml.indexOf('<a:custGeom>') >= 0);
+
   /* ── 같은 이미지 공유 ────────────────────────────────────────── */
 
   /*
