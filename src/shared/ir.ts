@@ -177,7 +177,11 @@ export function fitsInMaster(item: Item): boolean {
   return item.type !== 'text' || item.runs.length <= 1;
 }
 
-export interface Doc {
+/**
+ * 슬라이드를 뺀 문서 정보. 내보내기는 이것을 먼저 보내고 슬라이드를 한 장씩 뒤따라 보낸다 —
+ * 이미지가 base64 로 부푼 문서를 통째로 넘기면 다리가 막힌다 (가져오기와 같은 이유).
+ */
+export interface DocMeta {
   /** 최종 슬라이드 크기 (pt) */
   slideWPt: number;
   slideHPt: number;
@@ -193,6 +197,9 @@ export interface Doc {
   chip: string | null;
   /** 공통 서식. 슬라이드보다 먼저 정의해야 한다. */
   masters: Master[];
+}
+
+export interface Doc extends DocMeta {
   slides: Slide[];
   warnings: Warning[];
 }
@@ -226,7 +233,12 @@ export interface SelectionState {
 export type MainToUi =
   | { type: 'selection'; state: SelectionState }
   | { type: 'progress'; done: number; total: number }
-  | { type: 'doc'; doc: Doc; fileName: string }
+  /*
+   * 내보내기도 가져오기처럼 한 장씩 흘려보낸다.
+   * 문서를 통째로 넘기면 이미지가 base64 로 부푼 만큼 한 번에 실려 장수가 늘수록 터진다.
+   */
+  | { type: 'exportBegin'; meta: DocMeta; total: number; fileName: string; warnings: Warning[] }
+  | { type: 'exportSlide'; index: number; slide: Slide; warnings: Warning[] }
   /**
    * 가져오기 준비 완료. UI 는 이 신호를 받고서야 첫 슬라이드를 보낸다.
    * Figma 는 async 핸들러를 기다려주지 않으므로, 확인 없이 연달아 보내면
@@ -242,6 +254,8 @@ export type UiToMain =
   /** locale 은 UI 만 알 수 있어(navigator.languages) 첫 메시지에 실어 보낸다 */
   | { type: 'ready'; locale: Locale }
   | { type: 'export'; imageDpi: number }
+  /** 다음 장을 달라 — 한 장 받아 붙인 뒤에 보낸다 (앞질러 보내면 쌓인다) */
+  | { type: 'exportNext'; index: number }
   /*
    * 가져오기는 슬라이드를 한 장씩 보낸다.
    * 100MB 짜리 문서는 이미지가 base64 로 부풀어 한 번에 넘기면 postMessage 가 감당하지 못한다.

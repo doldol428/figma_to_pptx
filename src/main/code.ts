@@ -3,7 +3,7 @@ import { UI_MAX_HEIGHT } from '../shared/ir';
 import type { MainToUi, UiToMain } from '../shared/ir';
 import { resolveSlide } from '../shared/slidesize';
 import { ImportSession } from './create';
-import { extract } from './extract';
+import { type MasterPass, extractMasters, extractSlide } from './extract';
 import { collectFrames, validate } from './validate';
 
 const UI_WIDTH = 300;
@@ -22,6 +22,9 @@ figma.on('selectionchange', sendSelection);
 
 /** 진행 중인 가져오기. 슬라이드가 한 장씩 오므로 상태를 들고 있어야 한다. */
 let session: ImportSession | null = null;
+
+/** 진행 중인 내보내기. UI 가 한 장씩 달라고 하므로 프레임과 첫 훑기 결과를 들고 있는다. */
+let exporting: { frames: SceneNode[]; pass: MasterPass } | null = null;
 
 /*
  * Figma 는 async 핸들러가 끝나기를 기다리지 않고 다음 메시지를 던진다.
@@ -119,13 +122,38 @@ const handle = async (msg: UiToMain): Promise<void> => {
     }
 
     try {
-      const doc = await extract(frames, {
-        imageDpi: msg.imageDpi,
-        plan,
-        onProgress: (done, total) => post({ type: 'progress', done, total }),
+      /*
+       * 공통 서식만 먼저 보내고, 슬라이드는 UI 가 한 장씩 달라고 할 때마다 만든다.
+       * 문서를 통째로 만들어 한 번에 넘기면 58장 분량의 base64 이미지가 그대로 실려 터진다.
+       */
+      const pass = await extractMasters(frames, { imageDpi: msg.imageDpi, plan });
+      exporting = { frames, pass };
+      post({
+        type: 'exportBegin',
+        meta: pass.meta,
+        total: frames.length,
+        fileName: buildFileName(frames),
+        warnings: pass.warnings,
       });
-      post({ type: 'doc', doc, fileName: buildFileName(frames) });
     } catch (err) {
+      exporting = null;
+      post({ type: 'error', message: t().conversionError(String(err)) });
+    }
+    return;
+  }
+
+  if (msg.type === 'exportNext') {
+    if (!exporting) return;
+    const { frames, pass } = exporting;
+    if (msg.index >= frames.length) {
+      exporting = null;
+      return;
+    }
+    try {
+      const { slide, warnings } = await extractSlide(frames[msg.index], pass);
+      post({ type: 'exportSlide', index: msg.index, slide, warnings });
+    } catch (err) {
+      exporting = null;
       post({ type: 'error', message: t().conversionError(String(err)) });
     }
   }

@@ -2,9 +2,9 @@
 import type { ImportDoc } from '../shared/importir';
 import { resolveLocale, setLocale, t } from '../shared/i18n';
 import { UI_MAX_HEIGHT } from '../shared/ir';
-import type { MainToUi, SelectionState, UiToMain, Warning } from '../shared/ir';
+import type { DocMeta, MainToUi, SelectionState, UiToMain, Warning } from '../shared/ir';
 import { ptToMm } from '../shared/units';
-import { buildPptx } from './build';
+import { PptxBuilder } from './build';
 import { Dropdown, type DropdownOption } from './dropdown';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -349,7 +349,17 @@ elExport.addEventListener('click', () => {
   toMain({ type: 'export', imageDpi: dpi.value });
 });
 
+/** 진행 중인 내보내기. 장이 한 장씩 오므로 조립기를 들고 있어야 한다. */
+let out: {
+  builder: PptxBuilder;
+  meta: DocMeta;
+  total: number;
+  fileName: string;
+  warnings: Warning[];
+} | null = null;
+
 function finish(): void {
+  out = null;
   busy = false;
   elExport.disabled = !state?.ok;
   dpi.setDisabled(false);
@@ -408,14 +418,54 @@ window.onmessage = async (event: MessageEvent) => {
     return;
   }
 
-  if (msg.type === 'doc') {
-    elExport.textContent = t().building;
+  if (msg.type === 'exportBegin') {
     try {
-      const blob = await buildPptx(msg.doc);
-      download(blob, msg.fileName);
-      renderWarnings(msg.doc.warnings);
-      const size = `${fmt(ptToMm(msg.doc.slideWPt))} × ${fmt(ptToMm(msg.doc.slideHPt))} mm`;
-      toMain({ type: 'notify', message: t().exported(msg.doc.slides.length, size) });
+      out = {
+        builder: new PptxBuilder(msg.meta),
+        meta: msg.meta,
+        total: msg.total,
+        fileName: msg.fileName,
+        warnings: msg.warnings.slice(),
+      };
+      elExport.textContent = t().reading(0, msg.total);
+      toMain({ type: 'exportNext', index: 0 });
+    } catch (err) {
+      out = null;
+      showBlocked(t().buildFailed(String(err)));
+      finish();
+    }
+    return;
+  }
+
+  if (msg.type === 'exportSlide') {
+    if (!out) return;
+    try {
+      // 받은 장은 즉시 붙이고 흘려보낸다. 들고 있으면 한꺼번에 받는 것과 다를 게 없다.
+      out.builder.add(msg.slide);
+      out.warnings.push(...msg.warnings);
+    } catch (err) {
+      out = null;
+      showBlocked(t().buildFailed(String(err)));
+      toMain({ type: 'notify', message: t().exportFailed, error: true });
+      finish();
+      return;
+    }
+
+    const done = msg.index + 1;
+    if (done < out.total) {
+      elExport.textContent = t().reading(done, out.total);
+      toMain({ type: 'exportNext', index: done });
+      return;
+    }
+
+    elExport.textContent = t().building;
+    const done_ = out;
+    out = null;
+    try {
+      download(await done_.builder.finish(), done_.fileName);
+      renderWarnings(done_.warnings);
+      const size = `${fmt(ptToMm(done_.meta.slideWPt))} × ${fmt(ptToMm(done_.meta.slideHPt))} mm`;
+      toMain({ type: 'notify', message: t().exported(done_.total, size) });
     } catch (err) {
       showBlocked(t().buildFailed(String(err)));
       toMain({ type: 'notify', message: t().exportFailed, error: true });

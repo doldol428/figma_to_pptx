@@ -1,5 +1,8 @@
 import PptxGenJS from 'pptxgenjs';
-import type { Box, Doc, ImageItem, PathPoint, ShapeItem, TextItem } from '../shared/ir';
+// IR 의 Slide 와 PptxGenJS 의 Slide 가 이름이 겹친다. 이쪽은 "만들 내용"이라 SlideSpec 으로 받는다.
+import type {
+  Box, Doc, DocMeta, ImageItem, PathPoint, ShapeItem, Slide as SlideSpec, TextItem,
+} from '../shared/ir';
 import { ptToIn } from '../shared/units';
 
 /**
@@ -18,11 +21,48 @@ export async function buildPptx(doc: Doc): Promise<Blob> {
   return blob as Blob;
 }
 
-/** IR 을 PptxGenJS 인스턴스까지만 조립한다. 출력 형식은 호출부가 정한다(브라우저 blob / Node buffer). */
-export function composePptx(doc: Doc): PptxGenJS {
-  const pptx = new PptxGenJS();
-  const scale = new Scale(doc);
+/**
+ * 슬라이드를 한 장씩 받아 쌓는 조립기.
+ *
+ * 문서를 통째로 받으면 58장 분량의 base64 이미지가 한꺼번에 메모리에 올라가고,
+ * main → UI 로 넘길 때도 한 번에 넘겨야 한다. 장수가 늘면 그대로 터진다.
+ * 그래서 머리말로 시작하고, 장을 받을 때마다 붙이고, 마지막에 파일로 굳힌다.
+ */
+export class PptxBuilder {
+  private readonly pptx = new PptxGenJS();
+  private readonly scale: Scale;
 
+  constructor(meta: DocMeta) {
+    this.scale = new Scale(meta);
+    definePresentation(this.pptx, meta, this.scale);
+  }
+
+  add(slide: SlideSpec): void {
+    addSlideTo(this.pptx, slide, this.scale);
+  }
+
+  async finish(): Promise<Blob> {
+    return await this.pptx.write({ outputType: 'blob' }) as Blob;
+  }
+
+  /** 조립 중인 인스턴스. 출력 형식을 직접 정해야 하는 검증 도구용. */
+  get presentation(): PptxGenJS {
+    return this.pptx;
+  }
+}
+
+/**
+ * IR 을 PptxGenJS 인스턴스까지만 조립한다. 출력 형식은 호출부가 정한다(브라우저 blob / Node buffer).
+ * 한 장씩 붙이는 경로를 그대로 쓴다 — 검증이 실제 내보내기와 다른 길을 타면 의미가 없다.
+ */
+export function composePptx(doc: Doc): PptxGenJS {
+  const builder = new PptxBuilder(doc);
+  for (const slide of doc.slides) builder.add(slide);
+  return builder.presentation;
+}
+
+/** 슬라이드 크기와 공통 서식 — 장을 붙이기 전에 끝나 있어야 한다. */
+function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale): void {
   pptx.defineLayout({
     name: 'FIGMA_FRAME',
     width: ptToIn(doc.slideWPt),
@@ -52,20 +92,19 @@ export function composePptx(doc: Doc): PptxGenJS {
     });
   }
 
-  for (const slide of doc.slides) {
-    const s = slide.master ? pptx.addSlide({ masterName: slide.master }) : pptx.addSlide();
-    if (slide.fill.kind === 'solid') {
-      s.background = { color: slide.fill.color, transparency: slide.fill.transparency };
-    }
+}
 
-    for (const item of slide.items) {
-      if (item.type === 'shape') addShape(pptx, s, item, scale);
-      else if (item.type === 'text') addText(s, item, scale);
-      else addImage(s, item, scale);
-    }
+function addSlideTo(pptx: PptxGenJS, slide: SlideSpec, scale: Scale): void {
+  const s = slide.master ? pptx.addSlide({ masterName: slide.master }) : pptx.addSlide();
+  if (slide.fill.kind === 'solid') {
+    s.background = { color: slide.fill.color, transparency: slide.fill.transparency };
   }
 
-  return pptx;
+  for (const item of slide.items) {
+    if (item.type === 'shape') addShape(pptx, s, item, scale);
+    else if (item.type === 'text') addText(s, item, scale);
+    else addImage(s, item, scale);
+  }
 }
 
 /**
@@ -82,7 +121,7 @@ class Scale {
   private readonly offX: number;
   private readonly offY: number;
 
-  constructor(doc: Doc) {
+  constructor(doc: DocMeta) {
     this.k = doc.ptPerPx;
     this.offX = doc.offsetXPt;
     this.offY = doc.offsetYPt;

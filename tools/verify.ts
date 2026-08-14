@@ -13,7 +13,7 @@ import { fitsInMaster } from '../src/shared/ir';
 import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
 import { exportScaleForDpi } from '../src/shared/units';
-import { composePptx } from '../src/ui/build';
+import { PptxBuilder, composePptx } from '../src/ui/build';
 import { aliasesFor, pickFont } from '../src/main/fontalias';
 import { linePlacement } from '../src/import/transform';
 import { presetPath } from '../src/import/preset';
@@ -573,6 +573,41 @@ async function main(): Promise<void> {
   checkTruthy('서식 하나짜리 텍스트는 공통 서식에 들어감', fitsInMaster(withMaster.masters[0].items[2]));
   checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
   checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
+
+  /* ── 여러 장 흘려보내기 ──────────────────────────────────────── */
+
+  /*
+   * 내보내기는 장을 한 장씩 받아 붙인다 (문서를 통째로 넘기면 이미지가 부푼 만큼 실려 터진다).
+   * 여러 번 붙여도 장수와 순서가 그대로인지 확인한다.
+   */
+  const many: Doc = {
+    ...doc,
+    slides: [1, 2, 3].map((n) => ({
+      name: `${n}장`,
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [{
+        type: 'text', name: '쪽번호', box: box(10, 10, 100, 20),
+        align: 'left', valign: 'top', wrap: false,
+        runs: [{
+          text: `장 ${n}`, fontFace: 'Arial', fontSize: 12, bold: false,
+          italic: false, underline: false, strike: false, color: '000000', transparency: 0,
+        }],
+      }],
+    })),
+  };
+  const streamed = new PptxBuilder(many);
+  for (const s of many.slides) streamed.add(s);
+  const zipMany = await JSZip.loadAsync(
+    await streamed.presentation.write({ outputType: 'nodebuffer' }) as Buffer,
+  );
+  const parts = Object.keys(zipMany.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+
+  console.log('\n여러 장 흘려보내기');
+  check('붙인 만큼 슬라이드 파트가 생김', parts.length, 3);
+  for (let n = 1; n <= 3; n++) {
+    const xml = await zipMany.file(`ppt/slides/slide${n}.xml`)!.async('string');
+    checkTruthy(`${n}번째 장의 내용이 제자리`, xml.indexOf(`장 ${n}`) >= 0);
+  }
 
   /* ── 열린 경로 내보내기 ──────────────────────────────────────── */
 
