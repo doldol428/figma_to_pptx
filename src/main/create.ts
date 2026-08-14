@@ -488,7 +488,16 @@ async function createNode(spec: ImportNode, fonts: FontBook): Promise<SceneNode[
       }
       if (children.length === 0) return [];
       // figma.group 은 부모가 있어야 하므로 호출부에서 프레임에 붙인 뒤 묶는다.
-      return [wrapGroup(children, spec.name)];
+      const group = wrapGroup(
+        children,
+        // 도형+글자는 이름으로도 알아볼 수 있게 표시를 남긴다 (손으로 만든 것도 통하게).
+        spec.shapeText && children.length === 2 ? `${NAME.shapeText}/${spec.name}` : spec.name,
+      );
+      if (spec.shapeText && children.length === 2) {
+        group.setPluginData(KEY.role, 'shapeText');
+        group.setPluginData(KEY.pptxName, spec.name);
+      }
+      return [group];
     }
     default:
       return [];

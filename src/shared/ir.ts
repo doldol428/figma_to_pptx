@@ -125,6 +125,13 @@ export interface TextItem {
   /** 자동 줄바꿈 (Figma textAutoResize 가 WIDTH_AND_HEIGHT 면 false) */
   wrap: boolean;
   shadow?: Shadow;
+  /**
+   * 이 글자를 담는 도형.
+   *
+   * PPTX 는 "도형 안의 글자" 를 `<p:sp>` 하나로 쓴다 — 도형과 글자가 한 몸이다.
+   * Figma 에는 그 개념이 없어 가져올 때 둘로 갈리는데, 여기 담아 두면 다시 하나로 나간다.
+   */
+  shape?: { geom: Geom; fill: Fill; stroke?: Stroke };
 }
 
 export interface ImageItem {

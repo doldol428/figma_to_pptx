@@ -1,7 +1,7 @@
 import PptxGenJS from 'pptxgenjs';
 // IR 의 Slide 와 PptxGenJS 의 Slide 가 이름이 겹친다. 이쪽은 "만들 내용"이라 SlideSpec 으로 받는다.
 import type {
-  Box, Doc, DocMeta, ImageItem, PathPoint, ShapeItem, Slide as SlideSpec, TextItem,
+  Box, Doc, DocMeta, Geom, ImageItem, PathPoint, ShapeItem, Slide as SlideSpec, TextItem,
 } from '../shared/ir';
 import { ptToIn } from '../shared/units';
 
@@ -135,7 +135,7 @@ function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale): void {
     pptx.defineSlideMaster({
       title: master.name,
       objects: doc.masters.length > 0
-        ? master.items.map((item) => masterObject(pptx, item, scale))
+        ? master.items.map((item) => masterObject(item, scale))
         : undefined,
       slideNumber: master.slideNumber
         ? {
@@ -172,7 +172,7 @@ function addSlideTo(
   }
 
   for (const item of slide.items) {
-    if (item.type === 'shape') addShape(pptx, s, item, scale);
+    if (item.type === 'shape') addShape(s, item, scale);
     else if (item.type === 'text') addText(s, item, scale);
     else {
       addImage(s, item, scale);
@@ -282,14 +282,14 @@ function position(box: Box, s: Scale): Position {
   return pos;
 }
 
-function addShape(pptx: PptxGenJS, slide: Slide, item: ShapeItem, s: Scale): void {
-  const { shape, opts } = shapeSpec(pptx, item, s);
+function addShape(slide: Slide, item: ShapeItem, s: Scale): void {
+  const { shape, opts } = shapeSpec(item, s);
   slide.addShape(shape, opts);
 }
 
 /** 도형 하나의 PptxGenJS 인자. 슬라이드와 공통 서식이 같은 값을 쓴다. */
 function shapeSpec(
-  pptx: PptxGenJS, item: ShapeItem, s: Scale,
+  item: ShapeItem, s: Scale,
 ): { shape: PptxGenJS.SHAPE_NAME; opts: PptxGenJS.ShapeProps } {
   const opts: PptxGenJS.ShapeProps = {
     ...position(item.box, s),
@@ -316,22 +316,30 @@ function shapeSpec(
 
   if (item.shadow) opts.shadow = shadowOf(item.shadow, s);
 
-  let shape: PptxGenJS.SHAPE_NAME;
-  switch (item.geom.kind) {
+  return { shape: shapeNameFor(item.geom, item.box, s, opts), opts };
+}
+
+/**
+ * 기하 → PptxGenJS 도형 이름. 필요한 부가 값(모서리 반경·경로 점)은 opts 에 채운다.
+ * 도형 항목과 "도형 안의 글자" 가 같은 규칙을 타야 해서 따로 뺐다.
+ */
+function shapeNameFor(
+  geom: Geom,
+  box: Box,
+  s: Scale,
+  opts: { w?: number | string; h?: number | string; rectRadius?: number; points?: PptxGenJS.ShapeProps['points'] },
+): PptxGenJS.SHAPE_NAME {
+  switch (geom.kind) {
     case 'roundRect':
-      shape = pptx.ShapeType.roundRect;
       // rectRadius 는 inch. PptxGenJS 가 min(cx,cy) 대비 비율로 환산한다.
-      opts.rectRadius = s.len(Math.min(item.geom.radius, Math.min(item.box.w, item.box.h) / 2));
-      break;
+      opts.rectRadius = s.len(Math.min(geom.radius, Math.min(box.w, box.h) / 2));
+      return 'roundRect' as PptxGenJS.SHAPE_NAME;
     case 'ellipse':
-      shape = pptx.ShapeType.ellipse;
-      break;
+      return 'ellipse' as PptxGenJS.SHAPE_NAME;
     case 'line':
-      shape = pptx.ShapeType.line;
-      break;
+      return 'line' as PptxGenJS.SHAPE_NAME;
     case 'custom':
-      shape = CUST_GEOM;
-      opts.points = toPoints(item.geom.points, s);
+      opts.points = toPoints(geom.points, s);
       /*
        * custGeom 은 도형 상자가 곧 경로의 좌표계다. 한 변이 0 이면 `<a:path w=".." h="0">` 이
        * 되어 PowerPoint 가 경로를 펴지 못하고 파일 복구를 요구한다 — 가로로 곧은 선을 벡터로
@@ -340,12 +348,10 @@ function shapeSpec(
        */
       opts.w = Math.max(opts.w as number, MIN_EMU);
       opts.h = Math.max(opts.h as number, MIN_EMU);
-      break;
+      return CUST_GEOM;
     default:
-      shape = pptx.ShapeType.rect;
+      return 'rect' as PptxGenJS.SHAPE_NAME;
   }
-
-  return { shape, opts };
 }
 
 function shadowOf(shadow: NonNullable<ShapeItem['shadow']>, s: Scale): PptxGenJS.ShadowProps {
@@ -424,9 +430,29 @@ function textSpec(
     // 자동 축소/확대는 Figma 에 없는 동작이라 끈다.
     fit: 'none',
     isTextBox: true,
-    fill: { type: 'none' },
     line: { type: 'none' },
   };
+
+  /*
+   * 도형 안의 글자면 하나의 도형으로 내보낸다 — PPTX 는 원래 그렇게 쓰고, 그래야
+   * 파워포인트에서 도형과 글자가 같이 움직인다.
+   */
+  if (item.shape) {
+    opts.shape = shapeNameFor(item.shape.geom, item.box, s, opts);
+    opts.isTextBox = false;
+    if (item.shape.fill.kind === 'solid') {
+      opts.fill = { color: item.shape.fill.color, transparency: item.shape.fill.transparency };
+    }
+    if (item.shape.stroke) {
+      opts.line = {
+        color: item.shape.stroke.color,
+        transparency: item.shape.stroke.transparency,
+        width: s.pt(item.shape.stroke.width),
+        dashType: item.shape.stroke.dashType,
+      };
+    }
+  }
+
   if (item.shadow) opts.shadow = shadowOf(item.shadow, s);
 
   return { runs, opts };
@@ -460,13 +486,13 @@ function imageSpec(item: ImageItem, s: Scale): PptxGenJS.ImageProps {
  * (shared/ir.ts 의 fitsInMaster 가 걸러 슬라이드 쪽에 남긴다).
  */
 function masterObject(
-  pptx: PptxGenJS, item: ShapeItem | TextItem | ImageItem, s: Scale,
+  item: ShapeItem | TextItem | ImageItem, s: Scale,
 ): NonNullable<PptxGenJS.SlideMasterProps['objects']>[number] {
   if (item.type === 'image') {
     return { image: imageSpec(item, s) } as never;
   }
   if (item.type === 'shape') {
-    const { shape, opts } = shapeSpec(pptx, item, s);
+    const { shape, opts } = shapeSpec(item, s);
     return { text: { text: '', options: { ...opts, shape } as PptxGenJS.TextPropsOptions } } as never;
   }
   const { runs, opts } = textSpec(item, s);

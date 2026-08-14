@@ -553,8 +553,15 @@ async function readShape(
 
   if (children.length === 0) return null;
   if (children.length === 1) return children[0];
-  // 면과 글자를 함께 가진 도형 — Figma 에는 도형 안의 텍스트가 없으므로 묶어서 낸다.
-  return { type: 'group', name, place, opacity, children, perSlide: anyPerSlide(children) };
+  /*
+   * 면과 글자를 함께 가진 도형 — Figma 에는 도형 안의 텍스트가 없으므로 묶어서 낸다.
+   * 다시 하나로 합쳐 내보낼 수 있게 표시를 남긴다. 도형 하나 + 글자 하나일 때만이다.
+   */
+  const shapeText = children.length === 2
+    && children[0].type === 'shape' && children[1].type === 'text';
+  return {
+    type: 'group', name, place, opacity, children, shapeText, perSlide: anyPerSlide(children),
+  };
 }
 
 function resolveGeometry(

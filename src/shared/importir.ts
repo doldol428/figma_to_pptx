@@ -179,6 +179,11 @@ export interface TableNodeSpec extends NodeBase {
 export interface GroupNodeSpec extends NodeBase {
   type: 'group';
   children: ImportNode[];
+  /**
+   * 도형 하나에 글자가 얹힌 것을 갈라 담은 그룹.
+   * PPTX 는 이것을 `<p:sp>` 하나로 쓴다 — 표시해 두어야 내보낼 때 다시 하나로 합칠 수 있다.
+   */
+  shapeText?: boolean;
 }
 
 export type ImportNode =

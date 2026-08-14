@@ -586,6 +586,41 @@ async function main(): Promise<void> {
   checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
   checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
 
+  /* ── 도형 안의 글자 ──────────────────────────────────────────── */
+
+  /*
+   * PPTX 는 "도형 안의 글자" 를 <p:sp> 하나로 쓴다. Figma 에는 그 개념이 없어 가져올 때
+   * 도형과 글자로 갈리는데, 그대로 내보내면 둘이 따로 놀아 파워포인트에서 같이 움직이지 않는다.
+   */
+  const withShape: Doc = {
+    ...doc,
+    slides: [{
+      name: '도형 안의 글자',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [{
+        type: 'text', name: '상자', box: box(20, 20, 80, 30),
+        align: 'center', valign: 'middle', wrap: true,
+        shape: {
+          geom: { kind: 'roundRect', radius: 4 },
+          fill: { kind: 'solid', color: 'E3F2FD', transparency: 0 },
+          stroke: { color: '18539B', transparency: 0, width: 1, dashType: 'solid' },
+        },
+        runs: [{
+          text: '도형 안의 글자', fontFace: 'Arial', fontSize: 12, bold: false,
+          italic: false, underline: false, strike: false, color: '000000', transparency: 0,
+        }],
+      }],
+    }],
+  };
+  const shapeTextOut = await render(withShape);
+
+  console.log('\n도형 안의 글자');
+  check('도형이 하나만 나감', (shapeTextOut.xml.match(/<p:sp>/g) ?? []).length, 1);
+  checkTruthy('둥근 사각형으로 나감', shapeTextOut.xml.indexOf('prst="roundRect"') >= 0);
+  checkTruthy('그 도형이 글자를 품음', /<p:txBody>[\s\S]*도형 안의 글자/.test(shapeTextOut.xml));
+  checkTruthy('도형 채우기가 살아 있음', shapeTextOut.xml.indexOf('E3F2FD') >= 0);
+  checkTruthy('도형 선이 살아 있음', shapeTextOut.xml.indexOf('18539B') >= 0);
+
   /* ── PowerPoint 가 복구를 요구하는 값들 ──────────────────────── */
 
   /*

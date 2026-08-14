@@ -24,6 +24,15 @@ export type Role =
   | 'layout'
   /** 장마다 값이 달라 공통으로 묶을 수 없는 것 (슬라이드 번호) */
   | 'slideNumber'
+  /**
+   * 도형 하나에 글자가 얹힌 것.
+   *
+   * PPTX 는 이것을 `<p:sp>` **하나**로 쓴다 — 도형과 글자가 한 몸이라 같이 움직이고 같이 지워진다.
+   * Figma 에는 그런 개념이 없어 가져올 때 도형 노드와 글자 노드로 갈라 그룹에 담는다.
+   * 표시를 남겨 두지 않으면 내보낼 때 둘로 갈라진 채 나가, 파워포인트에서 글자만 따로 노는
+   * 텍스트 상자가 된다 (실측: 테두리 있는 상자 8개가 16개로).
+   */
+  | 'shapeText'
   /** 그 슬라이드 고유 내용 */
   | 'content';
 
@@ -31,6 +40,8 @@ export type Role =
 export const NAME = {
   layout: `${MARK}레이아웃`,
   slideNumber: `${MARK}슬라이드번호`,
+  /** 도형+글자 그룹. 원래 이름을 뒤에 붙여 `#도형글자/직사각형 5` 처럼 쓴다. */
+  shapeText: `${MARK}도형글자`,
 } as const;
 
 export function layoutName(name: string): string {
@@ -41,7 +52,14 @@ export function layoutName(name: string): string {
 export function roleFromName(name: string): Role | null {
   if (name === NAME.slideNumber) return 'slideNumber';
   if (name === NAME.layout || name.indexOf(`${NAME.layout}/`) === 0) return 'layout';
+  if (name === NAME.shapeText || name.indexOf(`${NAME.shapeText}/`) === 0) return 'shapeText';
   return null;
+}
+
+/** `#도형글자/직사각형 5` → `직사각형 5` */
+export function nameAfterMark(name: string): string {
+  const slash = name.indexOf('/');
+  return slash >= 0 ? name.slice(slash + 1) : name;
 }
 
 /**
