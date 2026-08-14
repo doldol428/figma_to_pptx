@@ -23,6 +23,8 @@ export interface Mark {
   line?: string;
   /** 런 하나씩. 자리를 비워 두면 그 런은 건드리지 않는다. */
   runs?: (string | undefined)[];
+  /** 표 칸 하나씩, 격자 순서대로 (병합에 가려진 칸도 자리를 차지한다). */
+  cells?: (string | undefined)[];
 }
 
 /** `ppt/slides/slide3.xml` → 그 장에 덧쓸 표식들 */
@@ -37,7 +39,8 @@ export class Marker {
   readonly parts: Marks = new Map();
 
   claim(part: string, frags: Omit<Mark, 'id'>): string | null {
-    if (!frags.fill && !frags.line && !frags.runs?.some(Boolean)) return null;
+    if (!frags.fill && !frags.line
+      && !frags.runs?.some(Boolean) && !frags.cells?.some(Boolean)) return null;
     const mark: Mark = { id: this.next++, ...frags };
     const list = this.parts.get(part);
     if (list) list.push(mark);
@@ -159,6 +162,18 @@ const LINE_START = /<a:ln[ >]/;
  * 은 생김새가 같아서, 선이 시작하는 자리를 경계로 앞뒤를 나눠야 서로를 침범하지 않는다.
  */
 function rewriteShape(sp: string, mark: Mark): string {
+  /*
+   * 표는 칸마다 제 칠을 지닌다. `<a:tc>` 는 격자 순서대로 나오고, 병합에 가려진 칸도
+   * 자리를 차지하므로 우리가 만든 격자와 순서가 그대로 맞는다.
+   */
+  if (mark.cells) {
+    let i = 0;
+    return sp.replace(/<a:tc[ >][\s\S]*?<\/a:tc>/g, (tc) => {
+      const replacement = mark.cells?.[i++];
+      return replacement ? swapFirstFill(tc, replacement) : tc;
+    });
+  }
+
   const bodyAt = sp.indexOf('<p:txBody>');
   let head = bodyAt < 0 ? sp : sp.slice(0, bodyAt);
   const body = bodyAt < 0 ? '' : sp.slice(bodyAt);
@@ -174,6 +189,13 @@ function rewriteShape(sp: string, mark: Mark): string {
   return head + (mark.runs && body ? swapRunFills(body, mark.runs) : body);
 }
 
+/** 표식이 붙은 도형을 감싸는 요소. 표는 `<p:sp>` 가 아니라 `<p:graphicFrame>` 이다. */
+const HOLDERS = ['<p:sp>', '<p:graphicFrame>'] as const;
+const CLOSERS: Record<string, string> = {
+  '<p:sp>': '</p:sp>',
+  '<p:graphicFrame>': '</p:graphicFrame>',
+};
+
 /** 부품 하나에 그 부품 몫의 표식을 전부 덧쓰고, 남은 꼬리표를 지운다. */
 export function injectPart(xml: string, marks: readonly Mark[]): string {
   let out = xml;
@@ -181,9 +203,18 @@ export function injectPart(xml: string, marks: readonly Mark[]): string {
     // 자리는 덧쓸 때마다 밀리므로 매번 처음부터 찾는다.
     const at = out.indexOf(`${tag(mark.id)}"`);
     if (at < 0) continue;
-    const open = out.lastIndexOf('<p:sp>', at);
-    const close = out.indexOf('</p:sp>', at);
-    if (open < 0 || close < 0) continue;
+
+    // 표식보다 앞에서 가장 가까이 시작한 요소가 그 도형이다.
+    let open = -1;
+    let holder = '';
+    for (const h of HOLDERS) {
+      const i = out.lastIndexOf(h, at);
+      if (i > open) { open = i; holder = h; }
+    }
+    if (open < 0) continue;
+    const close = out.indexOf(CLOSERS[holder], at);
+    if (close < 0) continue;
+
     out = out.slice(0, open) + rewriteShape(out.slice(open, close), mark) + out.slice(close);
   }
   return out.replace(LEFTOVER, '');

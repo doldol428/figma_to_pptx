@@ -806,7 +806,10 @@ async function main(): Promise<void> {
           // 첫 칸이 두 칸을 잡아먹는다. 가려진 칸은 자리를 만들면 안 된다.
           [cell('머리글', { colSpan: 2, fill: { kind: 'solid', color: 'E3F2FD', transparency: 0 } }),
             cell('', { merged: true }), cell('셋')],
-          [cell('하나'), cell('둘'), cell('셋')],
+          // 무늬 칠은 PptxGenJS 가 못 쓴다 — 칸 순서를 열쇠로 덧써야 한다.
+          [cell('하나', { fill: {
+            kind: 'solid', color: 'C5D4E6', transparency: 0, pattern: patt,
+          } }), cell('둘'), cell('셋')],
         ],
       }],
     }],
@@ -824,6 +827,9 @@ async function main(): Promise<void> {
   checkTruthy('테두리가 살아 있음', tableOut.xml.includes('888888'));
   checkTruthy('글자가 칸 안에 있음', /<a:tc[ >][\s\S]*?머리글/.test(tableOut.xml));
   checkTruthy('도형으로 풀리지 않음', !tableOut.xml.includes('<p:sp>'));
+  checkTruthy('칸 무늬가 되살아남', tableOut.xml.includes('<a:pattFill prst="ltUpDiag"'));
+  checkTruthy('무늬는 그 칸에만', (tableOut.xml.match(/<a:pattFill/g) ?? []).length === 1);
+  checkTruthy('표 이름에 표식이 남지 않음', !/~g\d+~/.test(tableOut.xml));
 
   /* ── SVG 아이콘의 관계 id ────────────────────────────────────── */
 

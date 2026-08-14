@@ -198,7 +198,7 @@ function addSlideTo(
   for (const item of slide.items) {
     if (item.type === 'shape') addShape(s, item, scale, marker, part);
     else if (item.type === 'text') addText(s, item, scale, marker, part);
-    else if (item.type === 'table') addTable(s, item, scale);
+    else if (item.type === 'table') addTable(s, item, scale, marker, part);
     else {
       addImage(s, item, scale);
       if (item.key) reuseByKey(s, item.key, byKey);
@@ -509,7 +509,7 @@ function textSpec(
  * PptxGenJS 는 `<a:tbl>` 을 제대로 쓴다 — 병합·변별 테두리·칸 색까지. 격자를 도형으로 풀지
  * 않고 이 길로 내보내야 파워포인트에서 행을 넣거나 열 너비를 끌 수 있다.
  */
-function addTable(slide: Slide, item: TableItem, s: Scale): void {
+function addTable(slide: Slide, item: TableItem, s: Scale, marker: Marker, part: string): void {
   const rows: PptxGenJS.TableRow[] = [];
   for (const row of item.rows) {
     const cells: PptxGenJS.TableCell[] = [];
@@ -533,10 +533,17 @@ function addTable(slide: Slide, item: TableItem, s: Scale): void {
     rows.push(cells);
   }
 
+  /*
+   * 칸의 무늬·그라디언트는 PptxGenJS 가 못 쓰므로 나중에 덧쓴다. 격자 순서 그대로 —
+   * 병합에 가려진 칸도 `<a:tc>` 자리를 차지하니 그 자리도 비워서 채워 넣는다.
+   */
+  const cells = item.rows.flatMap((row) => row.map((c) => fillXmlOf(c.fill)));
+  const tag = marker.claim(part, { cells });
+
   const pos = position(item.box, s);
   slide.addTable(rows, {
     ...pos,
-    objectName: item.name,
+    objectName: tag ? `${item.name} ${tag}` : item.name,
     colW: item.colWidths.map((w) => safeIn(s.len(w))),
     rowH: item.rowHeights.map((h) => safeIn(s.len(h))),
     // 표가 슬라이드를 넘으면 PptxGenJS 가 장을 쪼갠다 — 우리는 이미 자리가 정해져 있다.

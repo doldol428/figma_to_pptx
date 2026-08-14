@@ -844,6 +844,10 @@ async function createTable(spec: TableNodeSpec, fonts: FontBook): Promise<SceneN
       cell.name = `셀 ${r + 1}-${c + 1}`;
       cell.clipsContent = false;
       cell.fills = cellSpec.fill ? [toFigmaPaint(cellSpec.fill) as Paint2] : [];
+      // 표 칸에도 무늬가 쓰인다 (실측 10개). 도형과 같은 자리에 적어 둔다.
+      if (cellSpec.fill?.kind === 'solid' && cellSpec.fill.pattern) {
+        cell.setPluginData(KEY.pattern, JSON.stringify(cellSpec.fill.pattern));
+      }
       row.appendChild(cell);
 
       const width = (spec.colWidths[c] ?? 60) * (cellSpec.colSpan || 1);
