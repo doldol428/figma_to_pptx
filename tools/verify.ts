@@ -441,9 +441,11 @@ async function main(): Promise<void> {
    * create.ts 가 쓰는 것과 같은 행렬을 여기서 다시 세워, 회전까지 반영된 결과를 본다.
    */
   const endpoints = (p: {
-    x: number; y: number; w: number; h: number;
+    x: number; y: number; w: number; h: number; flipH?: boolean; flipV?: boolean;
   }): [number, number, number, number] => {
-    const at = linePlacement({ ...p, rotation: 0, flipH: false, flipV: false });
+    const at = linePlacement({
+      ...p, rotation: 0, flipH: p.flipH ?? false, flipV: p.flipV ?? false,
+    });
     const rad = (at.rotation * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
@@ -468,6 +470,16 @@ async function main(): Promise<void> {
     ['가로선 (10,20) 100×0', { x: 10, y: 20, w: 100, h: 0 }, '10,20 → 110,20'],
     ['대각선 (0,0) 100×50', { x: 0, y: 0, w: 100, h: 50 }, '0,0 → 100,50'],
     ['대각선 (5,7) 30×40', { x: 5, y: 7, w: 30, h: 40 }, '5,7 → 35,47'],
+    /*
+     * 뒤집기는 상자의 반대 대각선을 타라는 뜻이다. 실측 파일의 선 842개 중 256개가
+     * 대각선+뒤집기라, 이걸 놓치면 그만큼이 엉뚱한 방향으로 그어진다.
+     */
+    ['대각 flipV (0,0) 100×50', { x: 0, y: 0, w: 100, h: 50, flipV: true }, '0,50 → 100,0'],
+    ['대각 flipH (0,0) 100×50', { x: 0, y: 0, w: 100, h: 50, flipH: true }, '100,0 → 0,50'],
+    ['대각 flipHV (0,0) 100×50', { x: 0, y: 0, w: 100, h: 50, flipH: true, flipV: true }, '100,50 → 0,0'],
+    // 가로·세로는 뒤집어도 같은 자리다
+    ['가로 flipH (10,20) 100×0', { x: 10, y: 20, w: 100, h: 0, flipH: true }, '110,20 → 10,20'],
+    ['세로 flipV (34,0) 0×56', { x: 34, y: 0, w: 0, h: 56, flipV: true }, '34,56 → 34,0'],
   ];
   for (const [name, box, want] of lineCases) {
     const [x1, y1, x2, y2] = endpoints(box);
