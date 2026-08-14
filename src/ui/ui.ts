@@ -50,7 +50,6 @@ function renderStaticText(): void {
   elPick.textContent = t().pickFile;
   $('rangeLabel').textContent = t().slideRange;
   elRange.placeholder = t().slideRangeHint;
-  elFontList.textContent = t().fontListButton;
 }
 
 /* ── 방향 전환 ───────────────────────────────────────────────── */
@@ -62,7 +61,6 @@ const elPaneImport = $('paneImport');
 const elPick = $<HTMLButtonElement>('pick');
 const elFile = $<HTMLInputElement>('file');
 const elRange = $<HTMLInputElement>('range');
-const elFontList = $<HTMLButtonElement>('fontList');
 
 function showTab(which: 'export' | 'import'): void {
   const isExport = which === 'export';
@@ -83,8 +81,6 @@ elTabImport.addEventListener('click', () => showTab('import'));
 elPick.addEventListener('click', () => {
   if (!busy) elFile.click();
 });
-
-elFontList.addEventListener('click', () => toMain({ type: 'fontList' }));
 
 elFile.addEventListener('change', () => {
   const file = elFile.files?.[0];
@@ -330,18 +326,6 @@ window.onmessage = async (event: MessageEvent) => {
 
   if (msg.type === 'progress') {
     elExport.textContent = t().reading(msg.done, msg.total);
-    return;
-  }
-
-  if (msg.type === 'fontList') {
-    // 이름이 안 맞을 때 실제 등록명을 확인하려면 목록 전체가 필요하다.
-    const body = `Figma 가 인식한 폰트 ${msg.families.length}종
-${'='.repeat(40)}
-
-${msg.families.join('\n')}
-`;
-    download(new Blob([body], { type: 'text/plain;charset=utf-8' }), 'figma-fonts.txt');
-    toMain({ type: 'notify', message: t().fontListSaved(msg.families.length) });
     return;
   }
 

@@ -57,7 +57,8 @@
     font-weight: 600;
     cursor: pointer;
   }
-  #export { display: block; width: 100%; }
+  /* 두 탭의 주 버튼은 같은 규격이어야 한다 — 탭을 오가며 크기가 달라지면 어색하다. */
+  #export, #pick { display: block; width: 100%; }
   .primary {
     border: 1px solid transparent;
     background: var(--figma-color-bg-brand, #0d99ff);
@@ -89,6 +90,12 @@
     margin-bottom: 6px;
   }
   .field-label { color: var(--figma-color-text-secondary, #666); }
+  /* 라벨은 왼쪽, 값은 오른쪽 끝. 드롭다운(.select)과 같은 자리에 선다. */
+  .field-input {
+    margin-left: auto;
+    width: 110px;
+    font-weight: 400;
+  }
 
   .select { position: relative; margin-left: auto; }
   .select-trigger {
@@ -222,13 +229,10 @@
     </div>
     <div class="field">
       <span class="field-label" id="rangeLabel"></span>
-      <input type="text" class="control secondary" id="range" style="width:110px; font-weight:400"
-             inputmode="numeric" />
+      <input type="text" class="control secondary field-input" id="range" inputmode="numeric" />
     </div>
     <input type="file" id="file" accept=".pptx" hidden />
     <button type="button" class="control primary" id="pick"></button>
-    <button type="button" class="control secondary" id="fontList"
-            style="width:100%; margin-top:6px; font-weight:400"></button>
   </div>
 
   <div class="card hidden" id="warnings"></div>
