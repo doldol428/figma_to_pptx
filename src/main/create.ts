@@ -452,6 +452,11 @@ function applyStroke(node: SceneNode & MinimalStrokesMixin, stroke: StrokeSpec):
   node.strokes = [toFigmaPaint(stroke.paint) as Paint2];
   node.strokeWeight = Math.max(0.01, stroke.width);
   node.strokeAlign = 'CENTER';
+  /*
+   * 끝 모양을 빠뜨리면 선이 양끝에서 굵기의 절반씩 짧아진다.
+   * 브라켓처럼 선과 호를 이어 붙인 그림은 이음매마다 그만큼 파여 보인다 — 원본은 cap="rnd" 다.
+   */
+  if (stroke.cap && 'strokeCap' in node) node.strokeCap = stroke.cap;
   if (stroke.dash) node.dashPattern = stroke.dash;
 }
 
@@ -533,7 +538,8 @@ function createShape(spec: ShapeNode): SceneNode {
   const geom = spec.geometry;
   let node: SceneNode & MinimalStrokesMixin & MinimalFillsMixin;
   /** 벡터일 때, 경로가 이름상의 상자 안 어디에서 시작하는지 */
-  let contentOffset: PathBox | null = null;
+  let pathBox: PathBox | null = null;
+  let vector: VectorNode | null = null;
 
   if (geom.kind === 'ellipse') {
     const e = figma.createEllipse();
@@ -555,11 +561,12 @@ function createShape(spec: ShapeNode): SceneNode {
      * 경로를 원점으로 당겨 놓는다. 그래야 벡터 노드의 로컬 상자가 경로와 정확히 일치하고,
      * 회전·반전이 도형 자신의 축을 따른다. 당긴 만큼은 배치에서 되돌린다.
      */
-    contentOffset = pathBounds(geom.data);
+    pathBox = pathBounds(geom.data);
     v.vectorPaths = [{
       windingRule: geom.evenOdd ? 'EVENODD' : 'NONZERO',
-      data: translatePath(geom.data, -contentOffset.x, -contentOffset.y),
+      data: translatePath(geom.data, -pathBox.x, -pathBox.y),
     }];
+    vector = v;
     node = v;
   } else {
     const r = figma.createRectangle();
@@ -591,7 +598,20 @@ function createShape(spec: ShapeNode): SceneNode {
     }];
   }
   node.opacity = spec.opacity;
-  applyPlacement(node, spec.place, contentOffset ?? undefined);
+
+  /*
+   * 경로를 원점으로 옮겨 놨으니 노드 크기는 경로 크기와 같아야 한다.
+   * 다르면 Figma 가 무언가를 덧대며 원점을 옮긴 것이므로(선 굵기 등) 그만큼 되돌린다.
+   * 규칙을 가정하지 않고 실제 크기를 재서 맞춘다 — 여기서는 Figma 를 돌려 확인할 수 없다.
+   */
+  let content: { x: number; y: number } | undefined;
+  if (pathBox && vector) {
+    content = {
+      x: pathBox.x - (vector.width - pathBox.w) / 2,
+      y: pathBox.y - (vector.height - pathBox.h) / 2,
+    };
+  }
+  applyPlacement(node, spec.place, content);
   return node;
 }
 
