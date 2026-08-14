@@ -8,7 +8,8 @@
  */
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
-import type { Doc } from '../src/shared/ir';
+import type { Box, Doc, TextItem } from '../src/shared/ir';
+import { fitsInMaster } from '../src/shared/ir';
 import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
 import { exportScaleForDpi } from '../src/shared/units';
@@ -16,6 +17,8 @@ import { composePptx } from '../src/ui/build';
 import { aliasesFor, pickFont } from '../src/main/fontalias';
 import { linePlacement } from '../src/import/transform';
 import { presetPath } from '../src/import/preset';
+import { readFill } from '../src/import/color';
+import { deep as deepXml, parseXml } from '../src/import/xml';
 
 const EMU_PER_MM = 36000;
 const PT_PER_MM = 72 / 25.4;
@@ -36,6 +39,7 @@ const doc: Doc = {
   frameHPx: A4_H,
   chip: 'A4 세로',
   warnings: [],
+  masters: [],
   slides: [
     {
       name: 'A4 테스트',
@@ -155,6 +159,7 @@ function widescreenDoc(): Doc {
     frameHPx: 1080,
     chip: '16:9',
     warnings: [],
+    masters: [],
     slides: [{
       name: '표지',
       fill: { kind: 'solid', color: '101010', transparency: 0 },
@@ -495,6 +500,100 @@ async function main(): Promise<void> {
   check('pie 기본값', arcShape('pie', {}), '13,6.5 → 6.5,6.5 (3조각)');
   // blockArc 는 180°→0° — 바깥 호 180°(2조각) + 안쪽 되돌아오는 호 180°(2조각)
   check('blockArc 기본값', arcShape('blockArc', {}), '0,6.5 → 3.25,6.5 (4조각)');
+
+  /* ── 공통 서식 → slideLayout ─────────────────────────────────── */
+
+  /*
+   * `#레이아웃` 컴포넌트가 진짜 slideLayout 파트로 나가는지, 슬라이드가 그것을 가리키는지,
+   * `#슬라이드번호` 가 글자가 아니라 **필드**로 나가는지 — XML 을 열어 확인한다.
+   */
+  const box = (x: number, y: number, w: number, h: number): Box =>
+    ({ x, y, w, h, rot: 0, flipH: false, flipV: false });
+
+  const withMaster: Doc = {
+    ...doc,
+    masters: [{
+      name: '#레이아웃/백지',
+      items: [
+        {
+          type: 'shape', name: '괘선', box: box(mm(20), mm(30), mm(170), 0),
+          geom: { kind: 'line' }, fill: { kind: 'none' },
+          stroke: { color: 'A9B2BB', transparency: 0, width: 1, dashType: 'solid' },
+        },
+        {
+          type: 'shape', name: '장식', box: box(mm(20), mm(10), 20, 20),
+          geom: { kind: 'custom', points: [
+            { x: 0, y: 0, moveTo: true }, { x: 20, y: 0 }, { x: 10, y: 20 }, { close: true },
+          ] },
+          fill: { kind: 'solid', color: 'D5D9DD', transparency: 0 },
+        },
+        {
+          type: 'text', name: '머리글', box: box(mm(100), mm(12), mm(90), mm(8)),
+          align: 'right', valign: 'top', wrap: false,
+          runs: [{
+            text: '제 2 권', fontFace: 'Arial', fontSize: 12, bold: true,
+            italic: false, underline: false, strike: false, color: 'A9B2BB', transparency: 0,
+          }],
+        },
+      ],
+      slideNumber: {
+        box: box(mm(100), mm(285), mm(10), mm(5)),
+        fontFace: 'Arial', fontSize: 9, color: '404040', align: 'center',
+      },
+    }],
+    slides: [{ ...doc.slides[0], master: '#레이아웃/백지' }],
+  };
+
+  const m = await render(withMaster);
+  const layoutNames = Object.keys(m.zip.files).filter((n) => /slideLayout\d+\.xml$/.test(n));
+  const layoutXml = await m.zip.file(layoutNames[layoutNames.length - 1])!.async('string');
+  const slideRels = await m.zip.file('ppt/slides/_rels/slide1.xml.rels')!.async('string');
+
+  console.log('\n공통 서식 → slideLayout 파트');
+  checkTruthy('레이아웃 파트가 생성됨', layoutNames.length > 0);
+  checkTruthy('슬라이드가 그 레이아웃을 가리킴', slideRels.indexOf('slideLayout') >= 0);
+  checkTruthy('머리글 글자가 레이아웃에 들어감', layoutXml.indexOf('제 2 권') >= 0);
+  checkTruthy('선이 레이아웃에 들어감', layoutXml.indexOf('prst="line"') >= 0);
+  checkTruthy('custGeom 장식이 레이아웃에 들어감', layoutXml.indexOf('<a:custGeom>') >= 0);
+  // 페이지 번호는 글자가 아니라 필드여야 PowerPoint 가 장마다 다시 채운다.
+  checkTruthy('슬라이드 번호가 slidenum 필드로 나감', layoutXml.indexOf('type="slidenum"') >= 0);
+  checkTruthy('슬라이드 번호 자리표시자가 붙음', layoutXml.indexOf('type="sldNum"') >= 0);
+  // 공통 서식으로 뺀 것이 슬라이드에도 중복으로 들어가면 안 된다.
+  checkTruthy('머리글이 슬라이드에 중복되지 않음', m.xml.indexOf('제 2 권') < 0);
+
+  console.log(`\n■ 마스터 판정`);
+  const multiRun: TextItem = {
+    type: 'text', name: '2서식', box: box(0, 0, 10, 10), align: 'left', valign: 'top', wrap: true,
+    runs: [
+      { text: 'A', fontFace: 'Arial', fontSize: 12, bold: true, italic: false, underline: false, strike: false, color: '000000', transparency: 0 },
+      { text: 'B', fontFace: 'Arial', fontSize: 10, bold: false, italic: false, underline: false, strike: false, color: '000000', transparency: 0 },
+    ],
+  };
+  checkTruthy('서식 하나짜리 텍스트는 공통 서식에 들어감', fitsInMaster(withMaster.masters[0].items[2]));
+  checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
+  checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
+
+  /* ── 패턴 채우기 ─────────────────────────────────────────────── */
+
+  /*
+   * Figma 에 무늬 개념이 없어 앞색·뒷색을 밀도만큼 섞은 단색으로 근사한다.
+   * 안 읽으면 칠 없는 도형이 되어 노드가 통째로 버려진다 — 실제로 십자가 도형이 그렇게 사라졌었다.
+   */
+  const pattern = (prst: string, fg: string, bg: string): string => {
+    const xml = parseXml(`<a:spPr><a:pattFill prst="${prst}">`
+      + `<a:fgClr><a:srgbClr val="${fg}"/></a:fgClr>`
+      + `<a:bgClr><a:srgbClr val="${bg}"/></a:bgClr></a:pattFill></a:spPr>`);
+    // parseXml 은 #root 로 감싸서 돌려준다. readFill 은 spPr 자체를 받는다.
+    const paint = readFill(deepXml(xml, 'spPr'), { scheme: {}, map: {} });
+    return paint && paint.kind === 'solid' ? paint.color : '없음';
+  };
+
+  console.log('\n패턴 채우기 — 밀도만큼 섞은 단색');
+  check('dkUpDiag 검정/흰색 (50%)', pattern('dkUpDiag', '000000', 'FFFFFF'), '808080');
+  check('pct25 검정/흰색', pattern('pct25', '000000', 'FFFFFF'), 'BFBFBF');
+  check('pct75 검정/흰색', pattern('pct75', '000000', 'FFFFFF'), '404040');
+  // 모르는 이름은 50% 로 떨어지되, 도형이 사라지지는 않아야 한다
+  check('모르는 무늬', pattern('notAPattern', '000000', 'FFFFFF'), '808080');
 
   if (failures.length > 0) {
     console.error(`\n실패 ${failures.length}건: ${failures.join(', ')}`);

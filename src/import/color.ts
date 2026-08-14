@@ -229,8 +229,64 @@ export function readFill(spPr: XNode | null, ctx: ColorContext): Paint | null | 
   const grad = one(spPr, 'gradFill');
   if (grad) return readGradient(grad, ctx);
 
+  const patt = one(spPr, 'pattFill');
+  if (patt) return readPattern(patt, ctx);
+
   // blipFill(이미지 채우기)은 호출부가 그림 노드로 따로 처리한다.
   return undefined;
+}
+
+/**
+ * 패턴 채우기의 밀도 추정치 (%). 앞 글자가 굵기를 나타낸다 — lt(밝음)·dk(짙음)·wd(넓음)·nar(좁음).
+ * `pctNN` 은 이름이 곧 값이라 정확하고, 나머지는 눈대중이다.
+ */
+const PATTERN_DENSITY: Record<string, number> = {
+  ltDnDiag: 25, ltUpDiag: 25, ltHorz: 25, ltVert: 25,
+  dkDnDiag: 50, dkUpDiag: 50, dkHorz: 50, dkVert: 50,
+  wdDnDiag: 25, wdUpDiag: 25, narHorz: 50, narVert: 50,
+  dashDnDiag: 25, dashUpDiag: 25, dashHorz: 25, dashVert: 25,
+  dotGrid: 6, lgGrid: 12, smGrid: 25, cross: 25, diagCross: 40,
+  openDmnd: 25, dotDmnd: 12, solidDmnd: 50,
+  smCheck: 50, lgCheck: 50, trellis: 60, weave: 50, plaid: 50,
+  horzBrick: 40, diagBrick: 40, shingle: 25, wave: 25, zigZag: 25,
+  divot: 12, sphere: 50, smConfetti: 12, lgConfetti: 25,
+};
+
+/**
+ * `<a:pattFill>` — 무늬 채우기. Figma 에는 대응하는 개념이 없다.
+ *
+ * 안 읽으면 칠이 없는 도형이 되고, 선까지 없으면 노드가 통째로 버려진다.
+ * 실측 파일의 "덧셈 기호 131"(십자가 도형)이 그렇게 사라져 있었다.
+ *
+ * 그래서 앞색과 뒷색을 무늬 밀도만큼 섞은 **단색으로 근사**한다. 무늬 자체는 잃지만
+ * 도형과 색조는 남는다 — 아예 사라지는 것보다 낫고, 남아 있어야 사람이 고칠 수 있다.
+ */
+function readPattern(patt: XNode, ctx: ColorContext): Paint | null {
+  const fg = resolveColorNode(colorNode(one(patt, 'fgClr')), ctx);
+  const bg = resolveColorNode(colorNode(one(patt, 'bgClr')), ctx);
+  if (!fg && !bg) return null;
+  if (!fg) return { kind: 'solid', color: bg!.color, opacity: bg!.opacity };
+  if (!bg) return { kind: 'solid', color: fg.color, opacity: fg.opacity };
+
+  const prst = patt.attrs.prst ?? '';
+  const pct = /^pct(\d+)$/.exec(prst);
+  const density = (pct ? Number(pct[1]) : PATTERN_DENSITY[prst] ?? 50) / 100;
+
+  // hexOf 는 0..1 로 받는다. 섞는 것도 같은 공간에서 한다.
+  const mix = (a: number, b: number): number => b + (a - b) * density;
+  const f = rgbOf(fg.color);
+  const b = rgbOf(bg.color);
+  return {
+    kind: 'solid',
+    color: hexOf({ r: mix(f.r, b.r), g: mix(f.g, b.g), b: mix(f.b, b.b) }),
+    opacity: bg.opacity + (fg.opacity - bg.opacity) * density,
+  };
+}
+
+/** `"A9B2BB"` → 0..1 성분 */
+function rgbOf(hex: Hex): Rgb {
+  const v = parseInt(hex, 16);
+  return { r: ((v >> 16) & 255) / 255, g: ((v >> 8) & 255) / 255, b: (v & 255) / 255 };
 }
 
 export function readGradient(grad: XNode, ctx: ColorContext): GradientPaint | null {

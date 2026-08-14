@@ -30,8 +30,30 @@ export function composePptx(doc: Doc): PptxGenJS {
   });
   pptx.layout = 'FIGMA_FRAME';
 
+  /*
+   * 공통 서식을 먼저 정의한다 — 슬라이드가 masterName 으로 가리키려면 이미 있어야 한다.
+   * 이것이 진짜 slideLayout 파트가 되어, 머리글을 PowerPoint 에서도 한 번만 고치면 된다.
+   */
+  for (const master of doc.masters) {
+    pptx.defineSlideMaster({
+      title: master.name,
+      objects: doc.masters.length > 0
+        ? master.items.map((item) => masterObject(pptx, item, scale))
+        : undefined,
+      slideNumber: master.slideNumber
+        ? {
+          ...position(master.slideNumber.box, scale),
+          align: master.slideNumber.align,
+          fontFace: master.slideNumber.fontFace,
+          fontSize: scale.pt(master.slideNumber.fontSize),
+          color: master.slideNumber.color,
+        }
+        : undefined,
+    });
+  }
+
   for (const slide of doc.slides) {
-    const s = pptx.addSlide();
+    const s = slide.master ? pptx.addSlide({ masterName: slide.master }) : pptx.addSlide();
     if (slide.fill.kind === 'solid') {
       s.background = { color: slide.fill.color, transparency: slide.fill.transparency };
     }
@@ -115,6 +137,14 @@ function position(box: Box, s: Scale): Position {
 }
 
 function addShape(pptx: PptxGenJS, slide: Slide, item: ShapeItem, s: Scale): void {
+  const { shape, opts } = shapeSpec(pptx, item, s);
+  slide.addShape(shape, opts);
+}
+
+/** 도형 하나의 PptxGenJS 인자. 슬라이드와 공통 서식이 같은 값을 쓴다. */
+function shapeSpec(
+  pptx: PptxGenJS, item: ShapeItem, s: Scale,
+): { shape: PptxGenJS.SHAPE_NAME; opts: PptxGenJS.ShapeProps } {
   const opts: PptxGenJS.ShapeProps = {
     ...position(item.box, s),
     objectName: item.name,
@@ -156,7 +186,7 @@ function addShape(pptx: PptxGenJS, slide: Slide, item: ShapeItem, s: Scale): voi
       shape = pptx.ShapeType.rect;
   }
 
-  slide.addShape(shape, opts);
+  return { shape, opts };
 }
 
 function shadowOf(shadow: NonNullable<ShapeItem['shadow']>, s: Scale): PptxGenJS.ShadowProps {
@@ -197,6 +227,14 @@ function toPoints(points: PathPoint[], s: Scale): NonNullable<PptxGenJS.ShapePro
 }
 
 function addText(slide: Slide, item: TextItem, s: Scale): void {
+  const { runs, opts } = textSpec(item, s);
+  slide.addText(runs, opts);
+}
+
+/** 텍스트 하나의 PptxGenJS 인자. 슬라이드와 공통 서식이 같은 값을 쓴다. */
+function textSpec(
+  item: TextItem, s: Scale,
+): { runs: PptxGenJS.TextProps[]; opts: PptxGenJS.TextPropsOptions } {
   const runs: PptxGenJS.TextProps[] = item.runs.map((r) => {
     const options: PptxGenJS.TextPropsOptions = {
       fontFace: r.fontFace,
@@ -232,10 +270,14 @@ function addText(slide: Slide, item: TextItem, s: Scale): void {
   };
   if (item.shadow) opts.shadow = shadowOf(item.shadow, s);
 
-  slide.addText(runs, opts);
+  return { runs, opts };
 }
 
 function addImage(slide: Slide, item: ImageItem, s: Scale): void {
+  slide.addImage(imageSpec(item, s));
+}
+
+function imageSpec(item: ImageItem, s: Scale): PptxGenJS.ImageProps {
   const pos = position(item.box, s);
   const opts: PptxGenJS.ImageProps = {
     ...pos,
@@ -245,5 +287,32 @@ function addImage(slide: Slide, item: ImageItem, s: Scale): void {
   if (item.sizing !== 'stretch') {
     opts.sizing = { type: item.sizing, w: pos.w, h: pos.h };
   }
-  slide.addImage(opts);
+  return opts;
+}
+
+/**
+ * 항목 하나를 공통 서식(slideLayout)에 넣을 형태로.
+ *
+ * PptxGenJS 의 마스터는 `text`·`rect`·`line`·`image` 키만 받지만, `text` 키는 내부적으로
+ * `addTextDefinition` 을 타고 그것이 `options.shape` 를 존중한다. 그래서 도형도 `text` 키에
+ * 실어 보내면 custGeom 까지 그대로 나간다 (`rect` 키는 사각형으로 고정이라 쓸 수 없다).
+ *
+ * 다만 글자는 문자열 하나만 실린다 — 서식이 여러 개인 텍스트는 애초에 여기까지 오지 않는다
+ * (shared/ir.ts 의 fitsInMaster 가 걸러 슬라이드 쪽에 남긴다).
+ */
+function masterObject(
+  pptx: PptxGenJS, item: ShapeItem | TextItem | ImageItem, s: Scale,
+): NonNullable<PptxGenJS.SlideMasterProps['objects']>[number] {
+  if (item.type === 'image') {
+    return { image: imageSpec(item, s) } as never;
+  }
+  if (item.type === 'shape') {
+    const { shape, opts } = shapeSpec(pptx, item, s);
+    return { text: { text: '', options: { ...opts, shape } as PptxGenJS.TextPropsOptions } } as never;
+  }
+  const { runs, opts } = textSpec(item, s);
+  const run = runs[0];
+  return {
+    text: { text: run?.text ?? '', options: { ...opts, ...run?.options } },
+  } as never;
 }

@@ -144,6 +144,37 @@ export interface Slide {
   name: string;
   fill: Fill;
   items: Item[];
+  /** 이 장이 쓰는 공통 서식 (Master.name). 없으면 독립 슬라이드. */
+  master?: string;
+}
+
+/**
+ * 여러 장이 공유하는 공통 서식 — PPTX 의 slideLayout 파트가 된다.
+ * `#레이아웃/…` 컴포넌트의 인스턴스를 놓은 슬라이드들이 이것을 가리킨다.
+ */
+export interface Master {
+  name: string;
+  items: Item[];
+  /** 진짜 `<a:fld type="slidenum">` 로 나갈 자리. `#슬라이드번호` 에서 온다. */
+  slideNumber?: {
+    box: Box;
+    fontFace: string;
+    /** px */
+    fontSize: number;
+    color: Hex;
+    align: TextItem['align'];
+  };
+}
+
+/**
+ * 이 항목을 공통 서식에 넣을 수 있는가.
+ *
+ * PptxGenJS 의 마스터는 항목 하나에 문자열 하나만 실을 수 있다 (`[{ text: <값> }]` 로 감싼다).
+ * 서식이 여러 개인 텍스트를 넘기면 `[object Object]` 로 찍혀 나온다 — 실제로 확인했다.
+ * 도형·이미지·단일 서식 텍스트는 전부 나간다 (custGeom 포함).
+ */
+export function fitsInMaster(item: Item): boolean {
+  return item.type !== 'text' || item.runs.length <= 1;
 }
 
 export interface Doc {
@@ -160,6 +191,8 @@ export interface Doc {
   frameHPx: number;
   /** "16:9", "A4 세로" 같은 짧은 규격 칩 */
   chip: string | null;
+  /** 공통 서식. 슬라이드보다 먼저 정의해야 한다. */
+  masters: Master[];
   slides: Slide[];
   warnings: Warning[];
 }

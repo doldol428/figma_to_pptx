@@ -65,6 +65,7 @@ export interface Strings {
   fontListButton: string;
   fontListSaved: (n: number) => string;
   bulletGlyphChanged: (n: number) => string;
+  masterSpilled: (n: number) => string;
 
   /* 변환 경고 */
   scopeAll: string;
@@ -121,6 +122,8 @@ const KO: Strings = {
   fontListSaved: (n) => `폰트 ${n}종 목록을 저장했습니다`,
   bulletGlyphChanged: (n) =>
     `기호 폰트로 그린 글머리 ${n}곳은 Figma 기본 점(•)으로 바뀝니다. Figma 목록은 글리프를 지정할 수 없습니다.`,
+  masterSpilled: (n) =>
+    `서식이 여러 개인 텍스트 ${n}개는 공통 서식에 넣을 수 없어 장마다 넣었습니다. PowerPoint 레이아웃은 항목 하나에 서식 하나만 담습니다.`,
   mixedAlign: '문단마다 가로 정렬이 달라 첫 문단 기준으로 맞췄습니다. Figma 텍스트는 정렬이 상자 단위입니다.',
   warningsTitle: (n) => `변환 참고 ${n}건`,
   buildFailed: (err) => `PPTX 생성 실패: ${err}`,
@@ -192,6 +195,8 @@ const EN: Strings = {
   fontListSaved: (n) => `Saved a list of ${n} font families`,
   bulletGlyphChanged: (n) =>
     `${n} bullets drawn with a symbol font become Figma's default dot. Figma lists cannot set a glyph.`,
+  masterSpilled: (n) =>
+    `${n} text boxes with mixed formatting went onto each slide instead of the shared layout. A PowerPoint layout carries one format per item.`,
   mixedAlign: 'Paragraph alignments differed; the first one was applied to the whole box. Figma aligns text per box, not per paragraph.',
   warningsTitle: (n) => (n === 1 ? '1 conversion note' : `${n} conversion notes`),
   buildFailed: (err) => `Could not build the PPTX: ${err}`,
