@@ -681,13 +681,21 @@ async function main(): Promise<void> {
           ] },
           fill: { kind: 'solid', color: '4F88AB', transparency: 0, gradient: linear },
         },
+        // 런마다 제 색을 가진다. 두 번째 런만 그라디언트여야 한다.
         {
           type: 'text', name: '글자', box: box(120, 120, 100, 20),
-          align: 'left', valign: 'top', wrap: true, gradient: linear,
-          runs: [{
-            text: '그라디언트 글자', fontFace: 'Arial', fontSize: 12, bold: false,
-            italic: false, underline: false, strike: false, color: '4F88AB', transparency: 0,
-          }],
+          align: 'left', valign: 'top', wrap: true,
+          runs: [
+            {
+              text: '단색 ', fontFace: 'Arial', fontSize: 12, bold: false,
+              italic: false, underline: false, strike: false, color: '111111', transparency: 0,
+            },
+            {
+              text: '그라디언트', fontFace: 'Arial', fontSize: 12, bold: false,
+              italic: false, underline: false, strike: false, color: '4F88AB', transparency: 0,
+              gradient: linear,
+            },
+          ],
         },
       ],
     }],
@@ -717,6 +725,9 @@ async function main(): Promise<void> {
     (shapeNamed('테두리만').match(/<a:gradFill/g) ?? []).length === 1);
   checkTruthy('글자 그라디언트는 txBody 안에',
     /<p:txBody>[\s\S]*<a:gradFill/.test(shapeNamed('글자')));
+  check('그 글자의 그라디언트는 하나뿐',
+    (shapeNamed('글자').match(/<a:gradFill/g) ?? []).length, 1);
+  checkTruthy('단색 런은 그대로', shapeNamed('글자').includes('111111'));
 
   /* ── 무늬 채우기 왕복 ────────────────────────────────────────── */
 

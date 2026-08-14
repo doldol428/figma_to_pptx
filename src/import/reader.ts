@@ -2,12 +2,12 @@
 import { t } from '../shared/i18n';
 import type { Warning } from '../shared/ir';
 import type {
-  ImportDoc, ImportLayout, ImportNode, ImportSlide, Paint, Paragraph, Placement, ShapeGeometry,
-  ShadowSpec, ShapeNode, StrokeSpec, TableCell, TextRun,
+  GradientPaint, ImportDoc, ImportLayout, ImportNode, ImportSlide, Paint, Paragraph, Placement,
+  ShapeGeometry, ShadowSpec, ShapeNode, StrokeSpec, TableCell, TextRun,
 } from '../shared/importir';
 import {
-  colorNode, inheritsGroupFill, readFill, readLinePaint, resolveColorNode, sliceFillForChild,
-  type ColorContext,
+  averagePaint, colorNode, inheritsGroupFill, readFill, readGradient, readLinePaint,
+  resolveColorNode, sliceFillForChild, type ColorContext,
 } from './color';
 import { readEmbeddedFontNames } from './embedded';
 import { translatePath } from './pathbox';
@@ -1062,12 +1062,27 @@ function readRun(
 
   let color = '000000';
   let opacity = 1;
+  let gradient: GradientPaint | undefined;
   const solid = pickChild(chain, 'solidFill');
   if (solid) {
     const c = resolveColorNode(colorNode(solid), ctx.color);
     if (c) {
       color = c.color;
       opacity = c.opacity;
+    }
+  } else {
+    /*
+     * 글자에도 그라디언트가 걸린다 — 실측 덱에 233군데. Figma 도 글자 그라디언트를 지원하므로
+     * 그대로 옮긴다. 색은 평균값을 함께 넣어 두어, 그라디언트를 못 쓰는 자리에서도 검정으로
+     * 떨어지지 않게 한다.
+     */
+    const grad = pickChild(chain, 'gradFill');
+    const paint = grad ? readGradient(grad, ctx.color) : null;
+    if (paint) {
+      gradient = paint;
+      const avg = averagePaint(paint);
+      color = avg.color;
+      opacity = avg.opacity;
     }
   }
 
@@ -1085,6 +1100,7 @@ function readRun(
     strike: (pickAttr(chain, 'strike') ?? 'noStrike') !== 'noStrike',
     color,
     opacity,
+    ...(gradient ? { gradient } : {}),
   };
 
   const spc = pickAttr(chain, 'spc');

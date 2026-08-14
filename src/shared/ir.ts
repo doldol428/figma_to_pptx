@@ -150,6 +150,8 @@ export interface Run {
   strike: boolean;
   color: Hex;
   transparency: number;
+  /** 이 단색이 그라디언트의 평균값이면 원본이 여기 남는다 */
+  gradient?: Gradient;
   /** px */
   charSpacing?: number;
   /** px — 고정 행간 */
@@ -171,8 +173,6 @@ export interface TextItem {
   /** 자동 줄바꿈 (Figma textAutoResize 가 WIDTH_AND_HEIGHT 면 false) */
   wrap: boolean;
   shadow?: Shadow;
-  /** 글자 전체에 걸린 그라디언트. 런의 색은 그 평균값이다. */
-  gradient?: Gradient;
   /**
    * 이 글자를 담는 도형.
    *

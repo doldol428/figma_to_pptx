@@ -1,5 +1,5 @@
 ﻿import type { Run, TextItem } from '../shared/ir';
-import { toHex, topVisiblePaint } from './paint';
+import { resolveFill } from './paint';
 
 const ITALIC_RE = /\b(italic|oblique)\b/i;
 const BOLD_RE = /^(bold|black|heavy|extra ?bold|ultra ?bold)$/i;
@@ -50,13 +50,13 @@ function segmentToRunBase(seg: Segment): Omit<Run, 'text' | 'breakLine'> {
   const { fontFace, bold, italic } = mapFont(font);
   const fontSize = seg.fontSize as number;
 
-  const paint = topVisiblePaint(seg.fills as Paint[]);
-  let color = '000000';
-  let transparency = 0;
-  if (paint && paint.type === 'SOLID') {
-    color = toHex(paint.color);
-    transparency = Math.round((1 - (paint.opacity ?? 1)) * 100 * 10) / 10;
-  }
+  /*
+   * 글자 색. 그라디언트면 평균 단색을 색으로 쓰고 원본을 얹는다 — PptxGenJS 가 글자에도
+   * 단색만 받기 때문이고, 그 원본은 파일을 굳히기 직전 XML 에 덧써 넣는다.
+   * 예전에는 단색이 아니면 색을 못 읽고 검정으로 떨어졌다.
+   */
+  const fill = resolveFill(seg.fills as Paint[], 1);
+  const solid = fill.kind === 'fill' && fill.fill.kind === 'solid' ? fill.fill : null;
 
   const run: Omit<Run, 'text' | 'breakLine'> = {
     fontFace,
@@ -65,8 +65,9 @@ function segmentToRunBase(seg: Segment): Omit<Run, 'text' | 'breakLine'> {
     italic,
     underline: seg.textDecoration === 'UNDERLINE',
     strike: seg.textDecoration === 'STRIKETHROUGH',
-    color,
-    transparency,
+    color: solid?.color ?? '000000',
+    transparency: solid?.transparency ?? 0,
+    ...(solid?.gradient ? { gradient: solid.gradient } : {}),
   };
 
   const ls = seg.letterSpacing as LetterSpacing;

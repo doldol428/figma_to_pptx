@@ -295,6 +295,34 @@ function readPattern(patt: XNode, ctx: ColorContext): Paint | null {
   };
 }
 
+/**
+ * 그라디언트를 대표하는 단색 — 정지점을 위치로 가중 평균한다.
+ *
+ * 그라디언트를 그대로 옮길 수 없는 자리(글자 색의 대표값 등)에서 검정으로 떨어지지 않게 한다.
+ */
+export function averagePaint(paint: GradientPaint): { color: Hex; opacity: number } {
+  const stops = paint.stops;
+  if (stops.length === 0) return { color: '000000', opacity: 1 };
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let a = 0;
+  let sum = 0;
+  for (let i = 0; i < stops.length; i++) {
+    const prev = i === 0 ? stops[0].position : stops[i - 1].position;
+    const next = i === stops.length - 1 ? stops[i].position : stops[i + 1].position;
+    const w = Math.max((next - prev) / 2, 1e-3);
+    const c = rgbOf(stops[i].color);
+    r += c.r * w;
+    g += c.g * w;
+    b += c.b * w;
+    a += stops[i].opacity * w;
+    sum += w;
+  }
+  return { color: hexOf({ r: r / sum, g: g / sum, b: b / sum }), opacity: a / sum };
+}
+
 /** 0..1 불투명도 → 0..100 투명도. 내보내기 IR 이 쓰는 표기에 맞춘다. */
 function opacityToTransparency(opacity: number): number {
   return Math.round((1 - clamp01(opacity)) * 100 * 10) / 10;

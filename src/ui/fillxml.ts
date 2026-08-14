@@ -21,8 +21,8 @@ export interface Mark {
   fill?: string;
   /** 테두리 */
   line?: string;
-  /** 글자 (그 도형 안의 모든 런) */
-  text?: string;
+  /** 런 하나씩. 자리를 비워 두면 그 런은 건드리지 않는다. */
+  runs?: (string | undefined)[];
 }
 
 /** `ppt/slides/slide3.xml` → 그 장에 덧쓸 표식들 */
@@ -37,7 +37,7 @@ export class Marker {
   readonly parts: Marks = new Map();
 
   claim(part: string, frags: Omit<Mark, 'id'>): string | null {
-    if (!frags.fill && !frags.line && !frags.text) return null;
+    if (!frags.fill && !frags.line && !frags.runs?.some(Boolean)) return null;
     const mark: Mark = { id: this.next++, ...frags };
     const list = this.parts.get(part);
     if (list) list.push(mark);
@@ -129,9 +129,18 @@ function swapFirstFill(xml: string, replacement: string): string {
   return xml.slice(0, at) + replacement + xml.slice(end + '</a:solidFill>'.length);
 }
 
-/** 모든 `<a:solidFill>` 을 바꾼다 — 런마다 하나씩 있는 글자 색용. */
-function swapEveryFill(xml: string, replacement: string): string {
-  return xml.replace(/<a:solidFill>[\s\S]*?<\/a:solidFill>/g, replacement);
+/**
+ * 런마다 제 색을 갈아 끼운다.
+ *
+ * PptxGenJS 는 넘긴 런 하나에 `<a:r>` 하나를 쓰므로 순서가 그대로 맞는다.
+ * 문단이 갈려도 `<a:r>` 개수는 변하지 않는다 — 문단 나눔은 `<a:p>` 쪽 일이다.
+ */
+function swapRunFills(body: string, runs: readonly (string | undefined)[]): string {
+  let i = 0;
+  return body.replace(/<a:r>[\s\S]*?<\/a:r>/g, (run) => {
+    const replacement = runs[i++];
+    return replacement ? swapFirstFill(run, replacement) : run;
+  });
 }
 
 /**
@@ -162,7 +171,7 @@ function rewriteShape(sp: string, mark: Mark): string {
       + (mark.line ? swapFirstFill(fromLn, mark.line) : fromLn);
   }
 
-  return head + (mark.text && body ? swapEveryFill(body, mark.text) : body);
+  return head + (mark.runs && body ? swapRunFills(body, mark.runs) : body);
 }
 
 /** 부품 하나에 그 부품 몫의 표식을 전부 덧쓰고, 남은 꼬리표를 지운다. */

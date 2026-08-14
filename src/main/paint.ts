@@ -215,11 +215,13 @@ export function resolveStroke(
   return stroke;
 }
 
-/** 텍스트 노드 전체에 걸린 그라디언트. 런의 색은 그 평균값이라 별도로 얹는다. */
-export function textGradient(paints: readonly Paint[] | typeof figma.mixed): Gradient | undefined {
+/** PPTX 로 옮길 수 없는 그라디언트인가 — 원뿔형·마름모형은 대응이 없다. */
+export function unsupportedGradient(
+  paints: readonly Paint[] | typeof figma.mixed,
+): boolean {
   const paint = topVisiblePaint(paints);
-  if (!paint || !paint.type.startsWith('GRADIENT_')) return undefined;
-  return gradientOf(paint as GradientPaint);
+  if (!paint || !paint.type.startsWith('GRADIENT_')) return false;
+  return !gradientOf(paint as GradientPaint);
 }
 
 function dashOf(pattern: readonly number[] | undefined): Stroke['dashType'] {

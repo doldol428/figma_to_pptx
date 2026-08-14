@@ -1,7 +1,7 @@
 import PptxGenJS from 'pptxgenjs';
 // IR 의 Slide 와 PptxGenJS 의 Slide 가 이름이 겹친다. 이쪽은 "만들 내용"이라 SlideSpec 으로 받는다.
 import type {
-  Box, Doc, DocMeta, Fill, Geom, Gradient, ImageItem, PathPoint, ShapeItem,
+  Box, Doc, DocMeta, Fill, Geom, ImageItem, PathPoint, Run, ShapeItem,
   Slide as SlideSpec, Stroke, TextItem,
 } from '../shared/ir';
 import { ptToIn } from '../shared/units';
@@ -314,12 +314,12 @@ function addShape(slide: Slide, item: ShapeItem, s: Scale, marker: Marker, part:
  * PptxGenJS 가 그리지 못하는 그라디언트·무늬를 나중에 이 이름으로 찾아 XML 에 끼워 넣는다.
  */
 function named(name: string, marker: Marker, part: string, paints: {
-  fill?: Fill; line?: Stroke; text?: Gradient;
+  fill?: Fill; line?: Stroke; runs?: readonly Run[];
 }): string {
   const tag = marker.claim(part, {
     fill: fillXmlOf(paints.fill),
     line: lineXmlOf(paints.line),
-    text: paints.text ? gradFillXml(paints.text) : undefined,
+    runs: paints.runs?.map((r) => (r.gradient ? gradFillXml(r.gradient) : undefined)),
   });
   return tag ? `${name} ${tag}` : name;
 }
@@ -459,7 +459,7 @@ function textSpec(
   const opts: PptxGenJS.TextPropsOptions = {
     ...position(item.box, s),
     objectName: named(item.name, marker, part, {
-      fill: item.shape?.fill, line: item.shape?.stroke, text: item.gradient,
+      fill: item.shape?.fill, line: item.shape?.stroke, runs: item.runs,
     }),
     align: item.align,
     valign: item.valign,

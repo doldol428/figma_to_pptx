@@ -117,6 +117,8 @@ export interface TextRun {
   strike: boolean;
   color: Hex;
   opacity: number;
+  /** 글자에 그라디언트가 걸렸으면 여기 담는다. color 는 그 평균값이다. */
+  gradient?: GradientPaint;
   /** pt */
   letterSpacing?: number;
   link?: string;

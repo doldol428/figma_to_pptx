@@ -563,6 +563,8 @@ function createShape(spec: ShapeNode): SceneNode {
     else line.strokes = [];
     line.name = spec.name;
     line.opacity = spec.opacity;
+    // 선도 그림자를 진다. 여기서 일찍 돌아가느라 빠뜨리고 있었다 — 연결선 163개가 그랬다.
+    if (spec.shadow) line.effects = [dropShadow(spec.shadow)];
     return line;
   } else if (geom.kind === 'path') {
     const v = figma.createVector();
@@ -720,8 +722,11 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
         text.setRangeFontName(cursor, end,
           fonts.resolve(run.fontFamily, run.fontStyle, run.fontAlternates));
         text.setRangeFontSize(cursor, end, Math.max(1, run.size));
-        text.setRangeFills(cursor, end,
-          [{ type: 'SOLID', color: rgbOf(run.color), opacity: run.opacity }]);
+        text.setRangeFills(cursor, end, [
+          run.gradient
+            ? gradientPaint(run.gradient) as Paint2
+            : { type: 'SOLID', color: rgbOf(run.color), opacity: run.opacity },
+        ]);
         if (run.underline) text.setRangeTextDecoration(cursor, end, 'UNDERLINE');
         else if (run.strike) text.setRangeTextDecoration(cursor, end, 'STRIKETHROUGH');
         if (run.letterSpacing !== undefined) {
