@@ -80,6 +80,23 @@ function pickChild(nodes: StyleChain, tag: string): XNode | null {
   return null;
 }
 
+/**
+ * 여러 후보 중 **가장 가까운 단계**에 적힌 것을 고른다.
+ *
+ * 태그별로 따로 찾으면 안 된다. 런에 `gradFill` 이 있어도 마스터 기본값에 `solidFill` 이
+ * 있으면 그쪽이 먼저 걸려, 정작 자기 색을 못 쓴다 — 글자 그라디언트 233군데가 그랬다.
+ * 상속은 "가까운 단계가 이긴다" 이므로 단계를 먼저 훑고 그 안에서 종류를 가린다.
+ */
+function pickNearest(nodes: StyleChain, tags: readonly string[]): XNode | null {
+  for (const n of nodes) {
+    for (const tag of tags) {
+      const c = one(n, tag);
+      if (c) return c;
+    }
+  }
+  return null;
+}
+
 export interface ReadOptions {
   onProgress?: (done: number, total: number) => void;
   /** 가져올 슬라이드 번호(1부터). 비우면 전부. 한 장만 확인할 때 파싱까지 건너뛴다. */
@@ -480,6 +497,13 @@ function readStroke(ln: XNode | null, ctx: Ctx): StrokeSpec | undefined {
   return stroke;
 }
 
+/**
+ * 그림자. **직계 `<a:effectLst>` 만** 본다 — 거기 없으면 꺼진 효과다.
+ *
+ * PowerPoint 는 효과를 끄면 지우지 않고 `<a:extLst>` 안 `a14:hiddenEffects` 로 옮겨 둔다.
+ * 실측 덱의 outerShdw 413개 중 232개가 그 보관함에 있고, 원본에서도 그려지지 않는다.
+ * 자손을 다 훑으면 안 보이던 그림자가 살아난다.
+ */
 function readShadow(spPr: XNode | null, ctx: Ctx): ShadowSpec | undefined {
   const outer = deep(one(spPr, 'effectLst'), 'outerShdw');
   if (!outer) return undefined;
@@ -1060,29 +1084,28 @@ function readRun(
   const faces = resolveFont(chain, ctx);
   for (const f of faces) ctx.fonts.add(f);
 
+  /*
+   * 글자에도 그라디언트가 걸린다 — 실측 덱에 233군데. Figma 도 글자 그라디언트를 지원하므로
+   * 그대로 옮긴다. 색은 평균값을 함께 넣어 두어, 그라디언트를 못 쓰는 자리에서도 검정으로
+   * 떨어지지 않게 한다.
+   */
   let color = '000000';
   let opacity = 1;
   let gradient: GradientPaint | undefined;
-  const solid = pickChild(chain, 'solidFill');
-  if (solid) {
-    const c = resolveColorNode(colorNode(solid), ctx.color);
-    if (c) {
-      color = c.color;
-      opacity = c.opacity;
-    }
-  } else {
-    /*
-     * 글자에도 그라디언트가 걸린다 — 실측 덱에 233군데. Figma 도 글자 그라디언트를 지원하므로
-     * 그대로 옮긴다. 색은 평균값을 함께 넣어 두어, 그라디언트를 못 쓰는 자리에서도 검정으로
-     * 떨어지지 않게 한다.
-     */
-    const grad = pickChild(chain, 'gradFill');
-    const paint = grad ? readGradient(grad, ctx.color) : null;
+  const fill = pickNearest(chain, ['solidFill', 'gradFill']);
+  if (fill?.tag === 'gradFill') {
+    const paint = readGradient(fill, ctx.color);
     if (paint) {
       gradient = paint;
       const avg = averagePaint(paint);
       color = avg.color;
       opacity = avg.opacity;
+    }
+  } else if (fill) {
+    const c = resolveColorNode(colorNode(fill), ctx.color);
+    if (c) {
+      color = c.color;
+      opacity = c.opacity;
     }
   }
 
