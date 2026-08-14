@@ -2,6 +2,7 @@
   GradientPaint, ImageNodeSpec, ImportLayout, ImportNode, ImportSlide, Paint, Placement,
   ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
 } from '../shared/importir';
+import { linePlacement } from '../import/transform';
 import { KEY, NAME, layoutName } from '../shared/roles';
 import { aliasesFor, latinHead, pickFont } from './fontalias';
 
@@ -529,17 +530,9 @@ function createShape(spec: ShapeNode): SceneNode {
     node = e;
   } else if (geom.kind === 'line') {
     const line = figma.createLine();
-    // PPTX 선은 상자의 좌상단에서 우하단으로 간다. Figma LineNode 는 항상 수평이라
-    // 길이와 각도로 바꿔 넣는다.
-    const len = Math.hypot(spec.place.w, spec.place.h);
-    line.resizeWithoutConstraints(Math.max(0.01, len), 0);
-    const angle = Math.atan2(spec.place.h, spec.place.w) * (180 / Math.PI);
-    applyPlacement(line, {
-      ...spec.place,
-      w: len,
-      h: 0,
-      rotation: spec.place.rotation - angle,
-    });
+    const at = linePlacement(spec.place);
+    line.resizeWithoutConstraints(Math.max(0.01, at.w), 0);
+    applyPlacement(line, at);
     if (spec.stroke) applyStroke(line, spec.stroke);
     else line.strokes = [];
     line.name = spec.name;

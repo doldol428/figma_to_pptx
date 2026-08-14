@@ -30,6 +30,7 @@ const ms = Number(process.hrtime.bigint() - started) / 1e6;
 const EMU_MM = 25.4 / 72;
 const kinds = new Map<string, number>();
 const geoms = new Map<string, number>();
+const lines = new Map<string, number>();
 let deepest = 0;
 let outOfBounds = 0;
 let textChars = 0;
@@ -44,7 +45,13 @@ function walk(nodes: ImportNode[], depth: number): void {
   deepest = Math.max(deepest, depth);
   for (const n of nodes) {
     bump(kinds, n.type);
-    if (n.type === 'shape') bump(geoms, n.geometry.kind);
+    if (n.type === 'shape') {
+      bump(geoms, n.geometry.kind);
+      // 선은 방향에 따라 배치 계산이 갈린다 — 가로선만 맞고 나머지가 틀린 적이 있다.
+      if (n.geometry.kind === 'line') {
+        bump(lines, n.place.w === 0 ? '세로' : n.place.h === 0 ? '가로' : '대각');
+      }
+    }
     if (n.type === 'text') {
       for (const p of n.paragraphs) for (const r of p.runs) textChars += r.text.length;
       // wrap="none" 상자는 줄바꿈 없이 자동 크기로 만든다 — 몇 개나 되는지 알아야 한다.
@@ -89,6 +96,8 @@ console.log('\n■ 도형 기하');
 for (const [k, v] of [...geoms].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${String(v).padStart(6)}  ${k}`);
 }
+
+console.log(`  선 방향 — ${[...lines].map(([k, v]) => `${k} ${v}`).join(' · ')}`);
 
 console.log(`\n■ 좌표 범위 밖 노드: ${outOfBounds}`);
 if (outOfBounds > 0) {

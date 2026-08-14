@@ -14,6 +14,7 @@ import { resolveSlide } from '../src/shared/slidesize';
 import { exportScaleForDpi } from '../src/shared/units';
 import { composePptx } from '../src/ui/build';
 import { aliasesFor, pickFont } from '../src/main/fontalias';
+import { linePlacement } from '../src/import/transform';
 
 const EMU_PER_MM = 36000;
 const PT_PER_MM = 72 / 25.4;
@@ -425,6 +426,46 @@ async function main(): Promise<void> {
   }
   // 설치돼 있지 않으면 조용히 아무거나 집지 말고 없다고 해야 한다.
   check('설치 안 된 글꼴', resolveName('Dinmed', 'Regular'), '없음');
+
+  /* ── 선 배치 ─────────────────────────────────────────────────── */
+
+  /*
+   * 값이 아니라 **선이 실제로 놓이는 두 끝점**을 확인한다.
+   * create.ts 가 쓰는 것과 같은 행렬을 여기서 다시 세워, 회전까지 반영된 결과를 본다.
+   */
+  const endpoints = (p: {
+    x: number; y: number; w: number; h: number;
+  }): [number, number, number, number] => {
+    const at = linePlacement({ ...p, rotation: 0, flipH: false, flipV: false });
+    const rad = (at.rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const cx = at.x + at.w / 2;
+    const cy = at.y;
+    // 로컬 (0,0) 과 (len,0) 을 중심 기준 회전으로 옮긴다
+    const put = (t: number): [number, number] => [
+      cx + (t - at.w / 2) * cos,
+      cy - (t - at.w / 2) * sin,
+    ];
+    const [x1, y1] = put(0);
+    const [x2, y2] = put(at.w);
+    return [x1, y1, x2, y2];
+  };
+  const r2 = (v: number): number => Math.round(v * 100) / 100;
+
+  console.log('\n선 배치 — 실제로 놓이는 두 끝점');
+  const lineCases: Array<[string, { x: number; y: number; w: number; h: number }, string]> = [
+    // 실측 파일의 "직선 연결선 35" — 이 값이 (62,-28)→(62,28) 로 나오던 것이 버그였다
+    ['세로선 (34,0) 0×56', { x: 34, y: 0, w: 0, h: 56 }, '34,0 → 34,56'],
+    ['세로선 (34,41) 0×32', { x: 34, y: 41, w: 0, h: 32 }, '34,41 → 34,73'],
+    ['가로선 (10,20) 100×0', { x: 10, y: 20, w: 100, h: 0 }, '10,20 → 110,20'],
+    ['대각선 (0,0) 100×50', { x: 0, y: 0, w: 100, h: 50 }, '0,0 → 100,50'],
+    ['대각선 (5,7) 30×40', { x: 5, y: 7, w: 30, h: 40 }, '5,7 → 35,47'],
+  ];
+  for (const [name, box, want] of lineCases) {
+    const [x1, y1, x2, y2] = endpoints(box);
+    check(name, `${r2(x1)},${r2(y1)} → ${r2(x2)},${r2(y2)}`, want);
+  }
 
   if (failures.length > 0) {
     console.error(`\n실패 ${failures.length}건: ${failures.join(', ')}`);

@@ -12,6 +12,33 @@ import type { Placement } from '../shared/importir';
  * 그래서 중첩 구조를 따라 아핀 행렬을 누적한 뒤, 도형마다 한 번 분해해서 배치를 얻는다.
  */
 
+/**
+ * 선 하나를 Figma LineNode 의 배치로 바꾼다.
+ *
+ * PPTX 의 선은 상자의 좌상단에서 우하단으로 긋는다. 폭이 0이면 세로선, 높이가 0이면 가로선이다.
+ * Figma 의 LineNode 는 **언제나 수평**이고 길이가 곧 폭이라, 길이와 각도로 옮겨야 한다.
+ *
+ * 함정은 그 다음이다. 길이를 폭 자리에 그냥 끼워 넣으면 중심이 `x + 길이/2` 로 계산된다.
+ * 세로선은 원래 폭이 0이라 중심이 `x` 여야 하는데 `x + 길이/2` 가 되어, 선이 대각선으로 밀린다
+ * (실측: 56pt 세로선이 (+28, -28) 만큼 이동). 그래서 중심은 **원래 상자**에서 구한다.
+ * 가로선은 두 계산이 같은 값이라 이 버그가 오래 안 보였다.
+ */
+export function linePlacement(place: Placement): Placement {
+  const len = Math.hypot(place.w, place.h);
+  const angle = Math.atan2(place.h, place.w) * (180 / Math.PI);
+  const cx = place.x + place.w / 2;
+  const cy = place.y + place.h / 2;
+  return {
+    ...place,
+    x: cx - len / 2,
+    y: cy,
+    w: len,
+    h: 0,
+    // PPTX 는 시계 양수, Figma 는 반시계 양수라 각도를 뺀다.
+    rotation: place.rotation - angle,
+  };
+}
+
 /** [[a, c, tx], [b, d, ty]] */
 export type Mat = [[number, number, number], [number, number, number]];
 
