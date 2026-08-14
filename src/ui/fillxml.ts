@@ -135,10 +135,19 @@ function swapEveryFill(xml: string, replacement: string): string {
 }
 
 /**
+ * 테두리가 시작하는 자리.
+ *
+ * `<a:ln` 으로 찾으면 안 된다 — custGeom 경로의 `<a:lnTo>` 가 먼저 걸린다. 그러면 경계가
+ * 기하 한복판에 잡혀 칠을 엉뚱한 쪽에서 찾게 되고, **직선 구간이 있는 벡터만** 조용히
+ * 덧쓰기에 실패한다 (곡선만 있는 벡터는 `<a:cubicBezTo>` 뿐이라 멀쩡했다).
+ */
+const LINE_START = /<a:ln[ >]/;
+
+/**
  * 도형 하나(`<p:sp>…</p:sp>`) 안에서 자리를 갈라 덧쓴다.
  *
  * PptxGenJS 가 내는 `<p:spPr>` 는 xfrm → 기하 → 칠 → 선 순서다. 칠과 선의 `<a:solidFill>`
- * 은 생김새가 같아서, 선(`<a:ln`)이 시작하는 자리를 경계로 앞뒤를 나눠야 서로를 침범하지 않는다.
+ * 은 생김새가 같아서, 선이 시작하는 자리를 경계로 앞뒤를 나눠야 서로를 침범하지 않는다.
  */
 function rewriteShape(sp: string, mark: Mark): string {
   const bodyAt = sp.indexOf('<p:txBody>');
@@ -146,7 +155,7 @@ function rewriteShape(sp: string, mark: Mark): string {
   const body = bodyAt < 0 ? '' : sp.slice(bodyAt);
 
   if (mark.fill || mark.line) {
-    const lnAt = head.indexOf('<a:ln');
+    const lnAt = head.search(LINE_START);
     const beforeLn = lnAt < 0 ? head : head.slice(0, lnAt);
     const fromLn = lnAt < 0 ? '' : head.slice(lnAt);
     head = (mark.fill ? swapFirstFill(beforeLn, mark.fill) : beforeLn)

@@ -1,6 +1,6 @@
 ﻿import type {
   GradientPaint, ImageNodeSpec, ImportLayout, ImportNode, ImportSlide, Paint, Placement,
-  ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
+  ShadowSpec, ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
 } from '../shared/importir';
 import { type PathBox, pathBounds, translatePath } from '../import/pathbox';
 import { linePlacement } from '../import/transform';
@@ -602,17 +602,7 @@ function createShape(spec: ShapeNode): SceneNode {
   // 선이 없으면 명시적으로 비운다. createVector() 로 만든 노드는 기본 선을 달고 나온다.
   if (spec.stroke) applyStroke(node, spec.stroke);
   else node.strokes = [];
-  if (spec.shadow) {
-    node.effects = [{
-      type: 'DROP_SHADOW',
-      color: { ...rgbOf(spec.shadow.color), a: spec.shadow.opacity },
-      offset: { x: spec.shadow.offsetX, y: spec.shadow.offsetY },
-      radius: spec.shadow.blur,
-      spread: 0,
-      visible: true,
-      blendMode: 'NORMAL',
-    }];
-  }
+  if (spec.shadow) node.effects = [dropShadow(spec.shadow)];
   node.opacity = spec.opacity;
 
   /*
@@ -629,6 +619,18 @@ function createShape(spec: ShapeNode): SceneNode {
   }
   applyPlacement(node, spec.place, content);
   return node;
+}
+
+function dropShadow(shadow: ShadowSpec): DropShadowEffect {
+  return {
+    type: 'DROP_SHADOW',
+    color: { ...rgbOf(shadow.color), a: shadow.opacity },
+    offset: { x: shadow.offsetX, y: shadow.offsetY },
+    radius: shadow.blur,
+    spread: 0,
+    visible: true,
+    blendMode: 'NORMAL',
+  };
 }
 
 function createImage(spec: ImageNodeSpec): SceneNode[] {
@@ -658,6 +660,7 @@ function createImage(spec: ImageNodeSpec): SceneNode[] {
       rect.bottomLeftRadius = bl;
     }
     rect.opacity = spec.opacity;
+    if (spec.shadow) rect.effects = [dropShadow(spec.shadow)];
     applyPlacement(rect, spec.place);
     return [rect];
   } catch {

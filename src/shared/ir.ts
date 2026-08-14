@@ -197,6 +197,7 @@ export interface ImageItem {
   mime: 'image/png' | 'image/jpeg' | 'image/gif';
   /** Figma scaleMode 대응. 'stretch' 는 박스에 그대로 늘린다. */
   sizing: 'cover' | 'contain' | 'stretch';
+  shadow?: Shadow;
 }
 
 export type Item = ShapeItem | TextItem | ImageItem;

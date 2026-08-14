@@ -645,7 +645,9 @@ async function readConnector(el: XNode, parent: Mat, ctx: Ctx): Promise<ImportNo
     ? { kind: 'path', data: conn.data, evenOdd: false }
     : { kind: 'line' };
 
-  return { type: 'shape', name, place, opacity: 1, geometry, stroke };
+  // 연결선도 그림자를 진다. 도형 쪽만 읽으면 조용히 사라진다 (실측: 슬라이드 5 한 장에 20개).
+  const shadow = readShadow(spPr, ctx);
+  return { type: 'shape', name, place, opacity: 1, geometry, stroke, ...(shadow ? { shadow } : {}) };
 }
 
 async function readGroup(
@@ -769,6 +771,7 @@ async function readPicture(
   const prstGeom = one(spPr, 'prstGeom');
   const nativeShape = nativeFor(prstGeom?.attrs.prst ?? 'rect', place.w, place.h,
     readAdjust(prstGeom));
+  const shadow = readShadow(spPr, ctx);
 
   return {
     type: 'image',
@@ -778,6 +781,8 @@ async function readPicture(
     data: await file.async('base64'),
     mime,
     isSvg: ext === 'svg',
+    // 그림도 그림자를 진다 (실측 23개).
+    ...(shadow ? { shadow } : {}),
     ...(nativeShape && nativeShape.kind === 'roundRect' ? { radii: nativeShape.radii } : {}),
   };
 }

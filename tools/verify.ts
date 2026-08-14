@@ -670,6 +670,17 @@ async function main(): Promise<void> {
           fill: { kind: 'none' },
           stroke: { color: '4F88AB', transparency: 0, width: 2, dashType: 'solid', gradient: linear },
         },
+        /*
+         * 직선 구간이 있는 벡터. custGeom 경로의 `<a:lnTo>` 가 테두리 `<a:ln>` 으로 잘못
+         * 걸리면 칠을 엉뚱한 쪽에서 찾게 되어 이것만 조용히 실패한다 (실측 107개).
+         */
+        {
+          type: 'shape', name: '꺾인 벡터', box: box(200, 10, 60, 60),
+          geom: { kind: 'custom', points: [
+            { x: 0, y: 0, moveTo: true }, { x: 60, y: 0 }, { x: 60, y: 60 }, { close: true },
+          ] },
+          fill: { kind: 'solid', color: '4F88AB', transparency: 0, gradient: linear },
+        },
         {
           type: 'text', name: '글자', box: box(120, 120, 100, 20),
           align: 'left', valign: 'top', wrap: true, gradient: linear,
@@ -687,7 +698,12 @@ async function main(): Promise<void> {
   const shapeNamed = (n: string): string => gradShapes.find((s) => s.includes(`name="${n}"`)) ?? '';
 
   console.log('\n그라디언트');
-  check('그라디언트 4개가 나감', (gradOut.xml.match(/<a:gradFill/g) ?? []).length, 4);
+  check('그라디언트 5개가 나감', (gradOut.xml.match(/<a:gradFill/g) ?? []).length, 5);
+  checkTruthy('직선이 든 벡터도 채워짐', shapeNamed('꺾인 벡터').includes('<a:gradFill'));
+  // 경로 안이 아니라 기하가 끝난 뒤에 들어가야 한다
+  checkTruthy('경로는 안 건드림',
+    shapeNamed('꺾인 벡터').indexOf('<a:gradFill')
+    > shapeNamed('꺾인 벡터').indexOf('</a:custGeom>'));
   checkTruthy('이름에 표식이 남지 않음', !/~g\d+~/.test(gradOut.xml));
   checkTruthy('정지점 색이 둘 다 있음',
     shapeNamed('가운데 원').includes('6581C0') && shapeNamed('가운데 원').includes('3A8F96'));

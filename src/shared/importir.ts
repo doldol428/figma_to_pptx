@@ -151,6 +151,7 @@ export interface ImageNodeSpec extends NodeBase {
   mime: string;
   /** SVG 는 벡터로 심을 수 있어 따로 표시한다 */
   isSvg: boolean;
+  shadow?: ShadowSpec;
   /** 도형에 이미지 채우기로 들어간 경우의 모서리 반경 */
   radii?: [number, number, number, number];
 }

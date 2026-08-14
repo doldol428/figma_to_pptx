@@ -511,6 +511,7 @@ function imageSpec(item: ImageItem, s: Scale): PptxGenJS.ImageProps {
   if (item.sizing !== 'stretch') {
     opts.sizing = { type: item.sizing, w: pos.w, h: pos.h };
   }
+  if (item.shadow) opts.shadow = shadowOf(item.shadow, s);
   return opts;
 }
 
