@@ -11,6 +11,7 @@
     "pack": "npm run build && node tools/pack.mjs",
     "verify": "esbuild tools/verify.ts --bundle --platform=node --format=esm --outfile=dist/verify.mjs --external:jszip --external:pptxgenjs --log-level=warning && node dist/verify.mjs",
     "verify:import": "esbuild tools/verify-import.ts --bundle --platform=node --format=esm --outfile=dist/verify-import.mjs --external:jszip --log-level=warning && node dist/verify-import.mjs",
+    "compare": "esbuild tools/compare-roundtrip.ts --bundle --platform=node --format=esm --outfile=dist/compare.mjs --external:jszip --log-level=warning && node --max-old-space-size=8192 dist/compare.mjs",
     "check": "npm run typecheck && npm run build && npm run verify"
   },
   "repository": {
