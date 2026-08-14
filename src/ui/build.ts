@@ -42,6 +42,7 @@ export class PptxBuilder {
   }
 
   async finish(): Promise<Blob> {
+    shareRepeatedMedia(this.pptx);
     return await this.pptx.write({ outputType: 'blob' }) as Blob;
   }
 
@@ -58,7 +59,61 @@ export class PptxBuilder {
 export function composePptx(doc: Doc): PptxGenJS {
   const builder = new PptxBuilder(doc);
   for (const slide of doc.slides) builder.add(slide);
+  shareRepeatedMedia(builder.presentation);
   return builder.presentation;
+}
+
+/** PptxGenJS 내부의 미디어 관계 항목 — 공개 타입이 아니라 필요한 것만 좁게 적는다. */
+interface MediaRel {
+  data?: string;
+  Target?: string;
+  type?: string;
+}
+
+/**
+ * 같은 이미지는 파일 하나만 두고 여러 슬라이드가 함께 가리키게 한다.
+ *
+ * PPTX 는 원래 그렇게 쓴다 — 실측한 원본 덱은 이미지 참조 322개가 파일 235개를 가리키고,
+ * 내용이 같은데 따로 저장된 것이 하나도 없다. 반면 PptxGenJS 는 참조마다 파일을 하나씩 만든다.
+ * 중복 제거 장치가 있긴 한데 **파일 경로**를 열쇠로 쓰기 때문에 data URI 로 넣는 우리에게는
+ * 걸리지 않고, 게다가 한 슬라이드 안에서만 비교한다.
+ *
+ * 파일을 쓰는 쪽은 `zip.file(rel.Target, …)` 이라, 같은 Target 을 주면 한 파일로 합쳐진다.
+ * 그래서 Target 만 대표 하나로 맞춰 준다. (실측: 465MB → 이미지 197종 기준 약 90MB)
+ */
+function shareRepeatedMedia(pptx: PptxGenJS): void {
+  const parts = pptx as unknown as {
+    slides?: Array<{ _relsMedia?: MediaRel[] }>;
+    slideLayouts?: Array<{ _relsMedia?: MediaRel[] }>;
+    masterSlide?: { _relsMedia?: MediaRel[] };
+  };
+
+  /*
+   * base64 문자열 전체를 Map 열쇠로 쓰면 몇 MB 짜리를 매번 해싱한다.
+   * 길이와 앞뒤 조각으로 먼저 통을 나눈 뒤, 통 안에서만 전체를 비교한다 — 빠르면서 정확하다.
+   */
+  const buckets = new Map<string, Array<{ data: string; target: string }>>();
+
+  const share = (rel: MediaRel): void => {
+    if (!rel.data || !rel.Target) return;
+    const sig = `${rel.type ?? ''}|${rel.data.length}|${rel.data.slice(0, 48)}|${rel.data.slice(-48)}`;
+    const bucket = buckets.get(sig);
+    if (!bucket) {
+      buckets.set(sig, [{ data: rel.data, target: rel.Target }]);
+      return;
+    }
+    for (const seen of bucket) {
+      if (seen.data === rel.data) {
+        rel.Target = seen.target;
+        return;
+      }
+    }
+    bucket.push({ data: rel.data, target: rel.Target });
+  };
+
+  for (const slide of parts.slides ?? []) for (const rel of slide._relsMedia ?? []) share(rel);
+  for (const layout of parts.slideLayouts ?? []) for (const rel of layout._relsMedia ?? []) share(rel);
+  for (const rel of parts.masterSlide?._relsMedia ?? []) share(rel);
 }
 
 /** 슬라이드 크기와 공통 서식 — 장을 붙이기 전에 끝나 있어야 한다. */

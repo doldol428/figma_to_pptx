@@ -574,6 +574,41 @@ async function main(): Promise<void> {
   checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
   checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
 
+  /* ── 같은 이미지 공유 ────────────────────────────────────────── */
+
+  /*
+   * 실측한 원본 덱은 이미지 참조 322개가 파일 235개를 가리키고, 내용이 같은데 따로 저장된 것이
+   * 하나도 없다. PPTX 는 원래 그렇게 쓴다. 우리도 같은 이미지는 파일 하나만 두어야 한다.
+   */
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const OTHER = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const shared: Doc = {
+    ...doc,
+    slides: [1, 2, 3].map((n) => ({
+      name: `${n}장`,
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [
+        // 세 장에 같은 이미지
+        { type: 'image', name: '공용', box: box(10, 10, 50, 50), data: PNG, mime: 'image/png', sizing: 'stretch' },
+        // 마지막 장에만 다른 이미지 — 이건 따로 저장돼야 한다
+        ...(n === 3
+          ? [{ type: 'image' as const, name: '단독', box: box(70, 10, 50, 50), data: OTHER, mime: 'image/png' as const, sizing: 'stretch' as const }]
+          : []),
+      ],
+    })),
+  };
+  const sharedOut = await render(shared);
+  const mediaParts = Object.keys(sharedOut.zip.files).filter((n) => /^ppt\/media\/.+\.\w+$/.test(n));
+  let imageRefs = 0;
+  for (const n of Object.keys(sharedOut.zip.files).filter((x) => /^ppt\/slides\/_rels\/.+\.rels$/.test(x))) {
+    const rels = await sharedOut.zip.file(n)!.async('string');
+    imageRefs += (rels.match(/Type="[^"]*\/image"/g) ?? []).length;
+  }
+
+  console.log('\n같은 이미지 공유');
+  check('참조는 4번 (같은 것 3 + 다른 것 1)', imageRefs, 4);
+  check('저장된 파일은 2개', mediaParts.length, 2);
+
   /* ── 도형 id 충돌 ────────────────────────────────────────────── */
 
   /*
