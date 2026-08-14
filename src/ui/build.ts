@@ -150,9 +150,14 @@ function shapeSpec(
     objectName: item.name,
   };
 
-  opts.fill = item.fill.kind === 'solid'
-    ? { color: item.fill.color, transparency: item.fill.transparency }
-    : { type: 'none' };
+  /*
+   * 칠이 없으면 아예 넘기지 않는다.
+   * `{ type: 'none' }` 을 주면 PptxGenJS 가 그 분기에서 **아무것도 쓰지 않고**, 그러면
+   * PowerPoint 가 기본 도형 서식(강조색)으로 채워 버린다. 비워야 `<a:noFill/>` 이 나간다.
+   */
+  if (item.fill.kind === 'solid') {
+    opts.fill = { color: item.fill.color, transparency: item.fill.transparency };
+  }
 
   opts.line = item.stroke
     ? {

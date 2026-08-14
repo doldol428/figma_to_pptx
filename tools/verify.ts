@@ -574,6 +574,41 @@ async function main(): Promise<void> {
   checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
   checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
 
+  /* ── 열린 경로 내보내기 ──────────────────────────────────────── */
+
+  /*
+   * 브라켓의 원호는 **열린** 경로다. 닫아서 내보내면 끝점과 시작점이 직선으로 이어져
+   * 초승달이 되고, 칠을 안 적으면 PowerPoint 가 기본 서식으로 채워 버린다.
+   * 원본과 같이 열린 경로 + 선 + noFill 로 나가야 한다.
+   */
+  const openArc: Doc = {
+    ...doc,
+    slides: [{
+      name: '열린 호',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [{
+        type: 'shape',
+        name: '원호',
+        box: { x: 100, y: 100, w: 20, h: 20, rot: 0, flipH: false, flipV: false },
+        geom: { kind: 'custom', points: [
+          { x: 0, y: 0, moveTo: true },
+          { x: 20, y: 20, c: [11, 0, 20, 9] },
+        ] },
+        fill: { kind: 'none' },
+        stroke: { color: '808080', transparency: 0, width: 1, dashType: 'solid' },
+      }],
+    }],
+  };
+  const arcOut = await render(openArc);
+
+  console.log('\n열린 경로 내보내기');
+  checkTruthy('custGeom 으로 나감', arcOut.xml.indexOf('<a:custGeom>') >= 0);
+  checkTruthy('베지어가 들어감', arcOut.xml.indexOf('<a:cubicBezTo>') >= 0);
+  checkTruthy('경로를 닫지 않음 (a:close 없음)', arcOut.xml.indexOf('<a:close') < 0);
+  // 칠을 안 적으면 PowerPoint 가 기본 강조색으로 채운다. 명시적으로 비워야 한다.
+  checkTruthy('칠 없음이 <a:noFill/> 로 명시됨', arcOut.xml.indexOf('<a:noFill/>') >= 0);
+  checkTruthy('선은 그대로 나감', arcOut.xml.indexOf('<a:ln w=') >= 0);
+
   /* ── 경로 배치 (벡터 노드) ───────────────────────────────────── */
 
   /*
