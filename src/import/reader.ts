@@ -28,6 +28,8 @@ interface Ctx {
   color: ColorContext;
   /** 테마 폰트 — `+mj-lt` / `+mn-lt` 참조를 푸는 데 쓴다 */
   themeFonts: { major: string; minor: string };
+  /** 테마 선 굵기 사다리 (EMU). `<a:lnRef idx>` 가 가리키는 곳. */
+  lnStyleWidths: number[];
   warn: (slide: string, node: string, message: string) => void;
   fonts: Set<string>;
   slideName: string;
@@ -161,6 +163,12 @@ export async function readPptx(
     if (v) scheme[c.tag] = v;
   }
 
+  /*
+   * 테마의 선 굵기 사다리. `<p:style><a:lnRef idx="N">` 이 이 목록의 N 번째를 가리킨다.
+   * 도형이 `<a:ln>` 에 w 를 안 적으면 굵기가 여기서 온다 — 실측 덱은 0.5 / 1.0 / 1.5pt 다.
+   */
+  const lnStyleWidths = all(deep(theme, 'lnStyleLst'), 'ln').map((ln) => num(ln.attrs.w));
+
   const fontScheme = deep(theme, 'fontScheme');
   const themeFonts = {
     major: xpath(fontScheme, 'majorFont', 'latin')?.attrs.typeface || 'Arial',
@@ -173,6 +181,7 @@ export async function readPptx(
     zip,
     color: { scheme, map },
     themeFonts,
+    lnStyleWidths,
     warn,
     fonts,
     slideName: '',
@@ -481,11 +490,23 @@ function styleChainFor(sp: XNode, layout: XNode | null, ctx: Ctx): StyleChain {
   ];
 }
 
-function readStroke(ln: XNode | null, ctx: Ctx): StrokeSpec | undefined {
+/**
+ * 선 하나.
+ *
+ * 굵기를 안 적은 도형이 많다(실측 551개). 그때 굵기는 `<p:style><a:lnRef idx="N">` 이
+ * 가리키는 테마의 N 번째 선 스타일에서 온다 — 이 덱에서는 idx 1 이 0.5pt 다.
+ * 1pt 로 넘겨짚으면 그 선들이 전부 두 배로 굵어진다. 눈에 잘 안 띄지만 표와 연결선에서 티가 난다.
+ */
+function readStroke(ln: XNode | null, ctx: Ctx, style: XNode | null): StrokeSpec | undefined {
   if (!ln) return undefined;
   const paint = readLinePaint(ln, ctx.color);
   if (!paint) return undefined;
-  const width = ln.attrs.w ? pt(num(ln.attrs.w)) : 1;
+
+  const idx = num(one(style, 'lnRef')?.attrs.idx);
+  const themeWidth = idx > 0 ? ctx.lnStyleWidths[idx - 1] : undefined;
+  const width = ln.attrs.w
+    ? pt(num(ln.attrs.w))
+    : pt(themeWidth ?? ctx.lnStyleWidths[0] ?? 9525);
   const dashVal = one(ln, 'prstDash')?.attrs.val;
   const stroke: StrokeSpec = { paint, width };
   if (dashVal && dashVal !== 'solid') {
@@ -544,7 +565,7 @@ async function readShape(
     ? sliceFillForChild(inherited.paint, inherited.box, place)
     : undefined);
 
-  const stroke = readStroke(one(spPr, 'ln'), ctx);
+  const stroke = readStroke(one(spPr, 'ln'), ctx, one(sp, 'style'));
   const shadow = readShadow(spPr, ctx);
 
   const geometry = resolveGeometry(prst, custGeom, place, adj, name, ctx);
@@ -661,7 +682,7 @@ async function readConnector(el: XNode, parent: Mat, ctx: Ctx): Promise<ImportNo
   const place = placementOf(parent, local);
   const prst = one(spPr, 'prstGeom')?.attrs.prst ?? 'line';
 
-  const stroke = readStroke(one(spPr, 'ln'), ctx);
+  const stroke = readStroke(one(spPr, 'ln'), ctx, one(el, 'style'));
   if (!stroke) return null;
 
   const conn = connectorPath(prst, place.w, place.h);
@@ -854,10 +875,10 @@ function readTable(
       },
       vertical: anchor === 'ctr' ? 'CENTER' : anchor === 'b' ? 'BOTTOM' : 'TOP',
       borders: {
-        top: readStroke(one(tcPr, 'lnT'), ctx),
-        right: readStroke(one(tcPr, 'lnR'), ctx),
-        bottom: readStroke(one(tcPr, 'lnB'), ctx),
-        left: readStroke(one(tcPr, 'lnL'), ctx),
+        top: readStroke(one(tcPr, 'lnT'), ctx, null),
+        right: readStroke(one(tcPr, 'lnR'), ctx, null),
+        bottom: readStroke(one(tcPr, 'lnB'), ctx, null),
+        left: readStroke(one(tcPr, 'lnL'), ctx, null),
       },
     };
     return cell;
