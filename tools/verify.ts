@@ -17,6 +17,7 @@ import { composePptx } from '../src/ui/build';
 import { aliasesFor, pickFont } from '../src/main/fontalias';
 import { linePlacement } from '../src/import/transform';
 import { presetPath } from '../src/import/preset';
+import { pathBounds } from '../src/import/pathbox';
 import { readFill } from '../src/import/color';
 import { deep as deepXml, parseXml } from '../src/import/xml';
 
@@ -572,6 +573,46 @@ async function main(): Promise<void> {
   checkTruthy('서식 하나짜리 텍스트는 공통 서식에 들어감', fitsInMaster(withMaster.masters[0].items[2]));
   checkTruthy('서식 여러 개인 텍스트는 못 들어감', !fitsInMaster(multiRun));
   checkTruthy('custGeom 도형은 들어감', fitsInMaster(withMaster.masters[0].items[1]));
+
+  /* ── 경로 배치 (벡터 노드) ───────────────────────────────────── */
+
+  /*
+   * 브라켓 모서리 실측: 원호는 13×13 상자에 이름 붙어 있지만 실제로는 오른쪽 위 사분면만 쓴다.
+   * 이름상의 상자로 변환을 걸면 도형이 밀리고, flipH 의 반전 축까지 어긋난다.
+   *
+   * create.ts 와 같은 계산을 여기서 다시 세워, 경로의 네 귀퉁이가 어디에 놓이는지 본다.
+   */
+  const placedBounds = (
+    data: string, p: { x: number; y: number; w: number; h: number; flipH?: boolean },
+  ): string => {
+    const bb = pathBounds(data);
+    const w = p.w;
+    const h = p.h;
+    const fx = p.flipH ? -1 : 1;
+    // 회전 0 기준 — applyPlacement 의 a,b,c,d 와 같다
+    const a = fx;
+    const d = 1;
+    const cx = p.x + w / 2;
+    const cy = p.y + h / 2;
+    const tx = cx - a * (w / 2) + a * bb.x;
+    const ty = cy - d * (h / 2) + d * bb.y;
+    // 노드 로컬 (0,0)~(bw,bh) 가 놓이는 실제 범위
+    const xs = [tx, tx + a * bb.w];
+    const ys = [ty, ty + d * bb.h];
+    const r2n = (v: number): number => Math.round(v * 100) / 100;
+    return `${r2n(Math.min(...xs))},${r2n(Math.min(...ys))} ~ ${r2n(Math.max(...xs))},${r2n(Math.max(...ys))}`;
+  };
+
+  console.log('\n경로 배치 — 원호가 실제로 덮는 범위');
+  const arc90 = presetPath('arc', 13, 13, {})!.data;
+  check('원호 경계는 사분면 하나', (() => {
+    const b = pathBounds(arc90);
+    return `${Math.round(b.x * 10) / 10},${Math.round(b.y * 10) / 10} ${Math.round(b.w * 10) / 10}×${Math.round(b.h * 10) / 10}`;
+  })(), '6.5,0 6.5×6.5');
+  // 오른쪽 모서리 (원호 46): 반전 없음 — 상자의 오른쪽 위에 붙어야 한다
+  check('오른쪽 모서리', placedBounds(arc90, { x: 548, y: 310, w: 13, h: 13 }), '554.5,310 ~ 561,316.5');
+  // 왼쪽 모서리 (원호 43): flipH — 같은 상자의 **왼쪽** 위에 붙어야 한다
+  check('왼쪽 모서리 (flipH)', placedBounds(arc90, { x: 36, y: 310, w: 13, h: 13, flipH: true }), '36,310 ~ 42.5,316.5');
 
   /* ── 패턴 채우기 ─────────────────────────────────────────────── */
 

@@ -2,6 +2,7 @@
   GradientPaint, ImageNodeSpec, ImportLayout, ImportNode, ImportSlide, Paint, Placement,
   ShapeNode, StrokeSpec, TableNodeSpec, TextNodeSpec,
 } from '../shared/importir';
+import { type PathBox, pathBounds, translatePath } from '../import/pathbox';
 import { linePlacement } from '../import/transform';
 import { KEY, NAME, layoutName } from '../shared/roles';
 import { aliasesFor, latinHead, pickFont } from './fontalias';
@@ -337,7 +338,7 @@ class FontBook {
  * 회전·반전을 relativeTransform 으로 직접 넣는다.
  * x/y 와 rotation 을 따로 설정하면 Figma 가 중심을 다시 잡아 위치가 밀린다.
  */
-function applyPlacement(node: SceneNode, place: Placement): void {
+function applyPlacement(node: SceneNode, place: Placement, content?: { x: number; y: number }): void {
   const w = Math.max(0.01, place.w);
   const h = Math.max(0.01, place.h);
   const rad = (place.rotation * Math.PI) / 180;
@@ -354,9 +355,17 @@ function applyPlacement(node: SceneNode, place: Placement): void {
   const cx = place.x + w / 2;
   const cy = place.y + h / 2;
 
+  /*
+   * 노드의 로컬 원점이 이름상의 상자 좌상단이 아닐 수 있다 (벡터는 경로가 차지하는 만큼만 크다).
+   * 그 어긋남을 **로컬 공간에서** 더한다 — 회전·반전을 이미 거친 축을 따라야 하므로
+   * 결과 좌표에 그냥 더하면 안 된다.
+   */
+  const ox = content ? content.x : 0;
+  const oy = content ? content.y : 0;
+
   node.relativeTransform = [
-    [a, c, cx - (a * (w / 2) + c * (h / 2))],
-    [b, d, cy - (b * (w / 2) + d * (h / 2))],
+    [a, c, cx - (a * (w / 2) + c * (h / 2)) + a * ox + c * oy],
+    [b, d, cy - (b * (w / 2) + d * (h / 2)) + b * ox + d * oy],
   ];
 }
 
@@ -523,6 +532,8 @@ function wrapGroup(children: SceneNode[], name: string): FrameNode {
 function createShape(spec: ShapeNode): SceneNode {
   const geom = spec.geometry;
   let node: SceneNode & MinimalStrokesMixin & MinimalFillsMixin;
+  /** 벡터일 때, 경로가 이름상의 상자 안 어디에서 시작하는지 */
+  let contentOffset: PathBox | null = null;
 
   if (geom.kind === 'ellipse') {
     const e = figma.createEllipse();
@@ -540,9 +551,14 @@ function createShape(spec: ShapeNode): SceneNode {
     return line;
   } else if (geom.kind === 'path') {
     const v = figma.createVector();
+    /*
+     * 경로를 원점으로 당겨 놓는다. 그래야 벡터 노드의 로컬 상자가 경로와 정확히 일치하고,
+     * 회전·반전이 도형 자신의 축을 따른다. 당긴 만큼은 배치에서 되돌린다.
+     */
+    contentOffset = pathBounds(geom.data);
     v.vectorPaths = [{
       windingRule: geom.evenOdd ? 'EVENODD' : 'NONZERO',
-      data: geom.data,
+      data: translatePath(geom.data, -contentOffset.x, -contentOffset.y),
     }];
     node = v;
   } else {
@@ -575,7 +591,7 @@ function createShape(spec: ShapeNode): SceneNode {
     }];
   }
   node.opacity = spec.opacity;
-  applyPlacement(node, spec.place);
+  applyPlacement(node, spec.place, contentOffset ?? undefined);
   return node;
 }
 

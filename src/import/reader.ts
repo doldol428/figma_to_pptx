@@ -10,6 +10,7 @@ import {
   type ColorContext,
 } from './color';
 import { readEmbeddedFontNames } from './embedded';
+import { translatePath } from './pathbox';
 import { connectorPath, nativeFor, presetPath, readAdjust } from './preset';
 import {
   IDENTITY, decompose, multiply, placeBox, scale, translate, type Mat,
@@ -867,15 +868,6 @@ function mergeParts(parts: MergePart[], fill: Paint, name: string): ShapeNode | 
     geometry: { kind: 'path', data, evenOdd: false },
     fill,
   };
-}
-
-/** 절대 좌표 경로를 평행이동한다. 모든 명령의 인자가 (x, y) 쌍이라 번갈아 더하면 된다. */
-function translatePath(data: string, dx: number, dy: number): string {
-  let i = 0;
-  return data.replace(/-?\d*\.?\d+/g, (token) => {
-    const v = Number(token) + (i++ % 2 === 0 ? dx : dy);
-    return (Math.round(v * 100) / 100).toString();
-  });
 }
 
 /** 원시 도형을 경로로 편다. 합치려면 전부 경로여야 한다. */
