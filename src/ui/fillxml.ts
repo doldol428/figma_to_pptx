@@ -25,6 +25,8 @@ export interface Mark {
   runs?: (string | undefined)[];
   /** 표 칸 하나씩, 격자 순서대로 (병합에 가려진 칸도 자리를 차지한다). */
   cells?: (string | undefined)[];
+  /** preset 도형의 조절값 — 빈 `<a:avLst/>` 를 갈아 끼운다. */
+  avLst?: string;
 }
 
 /** `ppt/slides/slide3.xml` → 그 장에 덧쓸 표식들 */
@@ -39,7 +41,7 @@ export class Marker {
   readonly parts: Marks = new Map();
 
   claim(part: string, frags: Omit<Mark, 'id'>): string | null {
-    if (!frags.fill && !frags.line
+    if (!frags.fill && !frags.line && !frags.avLst
       && !frags.runs?.some(Boolean) && !frags.cells?.some(Boolean)) return null;
     const mark: Mark = { id: this.next++, ...frags };
     const list = this.parts.get(part);
@@ -177,6 +179,9 @@ function rewriteShape(sp: string, mark: Mark): string {
   const bodyAt = sp.indexOf('<p:txBody>');
   let head = bodyAt < 0 ? sp : sp.slice(0, bodyAt);
   const body = bodyAt < 0 ? '' : sp.slice(bodyAt);
+
+  // 조절값. PptxGenJS 는 빈 것만 쓰므로 그 자리에 그대로 끼운다.
+  if (mark.avLst) head = head.replace(/<a:avLst\s*\/>|<a:avLst>\s*<\/a:avLst>/, mark.avLst);
 
   if (mark.fill || mark.line) {
     const lnAt = head.search(LINE_START);

@@ -317,14 +317,24 @@ function addShape(slide: Slide, item: ShapeItem, s: Scale, marker: Marker, part:
  * PptxGenJS 가 그리지 못하는 그라디언트·무늬를 나중에 이 이름으로 찾아 XML 에 끼워 넣는다.
  */
 function named(name: string, marker: Marker, part: string, paints: {
-  fill?: Fill; line?: Stroke; runs?: readonly Run[];
+  fill?: Fill; line?: Stroke; runs?: readonly Run[]; avLst?: string;
 }): string {
   const tag = marker.claim(part, {
     fill: fillXmlOf(paints.fill),
     line: lineXmlOf(paints.line),
     runs: paints.runs?.map((r) => (r.gradient ? gradFillXml(r.gradient) : undefined)),
+    avLst: paints.avLst,
   });
   return tag ? `${name} ${tag}` : name;
+}
+
+/** preset 도형의 조절값. PptxGenJS 는 빈 `<a:avLst/>` 만 쓰므로 그 자리를 채운다. */
+function avLstXml(geom: Geom): string | undefined {
+  if (geom.kind !== 'preset') return undefined;
+  const gds = Object.entries(geom.adj)
+    .map(([k, v]) => `<a:gd name="${k}" fmla="val ${Math.round(v)}"/>`)
+    .join('');
+  return gds ? `<a:avLst>${gds}</a:avLst>` : undefined;
 }
 
 /** 도형 하나의 PptxGenJS 인자. 슬라이드와 공통 서식이 같은 값을 쓴다. */
@@ -333,7 +343,9 @@ function shapeSpec(
 ): { shape: PptxGenJS.SHAPE_NAME; opts: PptxGenJS.ShapeProps } {
   const opts: PptxGenJS.ShapeProps = {
     ...position(item.box, s),
-    objectName: named(item.name, marker, part, { fill: item.fill, line: item.stroke }),
+    objectName: named(item.name, marker, part, {
+      fill: item.fill, line: item.stroke, avLst: avLstXml(item.geom),
+    }),
   };
 
   /*
@@ -378,6 +390,12 @@ function shapeNameFor(
       return 'ellipse' as PptxGenJS.SHAPE_NAME;
     case 'line':
       return 'line' as PptxGenJS.SHAPE_NAME;
+    case 'preset':
+      /*
+       * PptxGenJS 는 도형 이름을 그대로 `<a:prstGeom prst="…">` 로 쓴다. 조절값만 못 쓰므로
+       * 빈 `<a:avLst/>` 가 나가고, 그 자리는 파일을 굳히기 직전에 채운다.
+       */
+      return geom.prst as PptxGenJS.SHAPE_NAME;
     case 'custom':
       opts.points = toPoints(geom.points, s);
       /*

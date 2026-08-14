@@ -127,7 +127,12 @@ export type Geom =
   | { kind: 'roundRect'; radius: number }
   | { kind: 'ellipse' }
   | { kind: 'line' }
-  | { kind: 'custom'; points: PathPoint[] };
+  | { kind: 'custom'; points: PathPoint[] }
+  /**
+   * PowerPoint 기본 도형. 경로 대신 이름으로 나가 파워포인트에서 편집할 수 있다.
+   * 가져올 때 적어 둔 이름을 **지금 경로와 대조해 통과한 것만** 여기로 온다.
+   */
+  | { kind: 'preset'; prst: string; adj: Record<string, number> };
 
 export interface ShapeItem {
   type: 'shape';

@@ -628,7 +628,14 @@ function resolveGeometry(
   if (native) return native;
 
   const preset = presetPath(prst, place.w, place.h, adj);
-  if (preset) return { kind: 'path', data: preset.data, evenOdd: preset.evenOdd };
+  if (preset) {
+    return {
+      kind: 'path',
+      data: preset.data,
+      evenOdd: preset.evenOdd,
+      preset: { prst, adj, w: place.w, h: place.h },
+    };
+  }
 
   const conn = connectorPath(prst, place.w, place.h);
   if (conn) return { kind: 'path', data: conn.data, evenOdd: false };

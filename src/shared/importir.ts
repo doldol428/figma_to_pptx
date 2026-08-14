@@ -92,7 +92,19 @@ export type ShapeGeometry =
   | { kind: 'ellipse' }
   | { kind: 'line' }
   /** SVG path — preset 도형·custGeom·연결선이 모두 여기로 온다 */
-  | { kind: 'path'; data: string; evenOdd: boolean };
+  | {
+    kind: 'path';
+    data: string;
+    evenOdd: boolean;
+    /**
+     * 이 경로가 preset 도형을 그린 것이면 그 이름과 조절값.
+     *
+     * 내보낼 때 지금 경로가 이것을 그대로 다시 그린 것과 같은지 대조해서, 같을 때만
+     * `<a:prstGeom>` 으로 되돌린다. 경로를 고쳤으면 안 닮았으니 custGeom 으로 나가고
+     * 그 편집이 살아남는다 — 이름만 믿고 되돌리면 편집이 날아간다.
+     */
+    preset?: { prst: string; adj: Record<string, number>; w: number; h: number };
+  };
 
 export interface ShapeNode extends NodeBase {
   type: 'shape';

@@ -17,7 +17,8 @@ import { PptxBuilder, composePptx } from '../src/ui/build';
 import { aliasesFor, pickFont } from '../src/main/fontalias';
 import { linePlacement } from '../src/import/transform';
 import { presetPath } from '../src/import/preset';
-import { pathBounds } from '../src/import/pathbox';
+import { pathBounds, translatePath } from '../src/import/pathbox';
+import { restorePreset } from '../src/main/preset';
 import { readFill } from '../src/import/color';
 import { blipRelId } from '../src/import/reader';
 import { deep as deepXml, parseXml } from '../src/import/xml';
@@ -773,6 +774,72 @@ async function main(): Promise<void> {
   checkTruthy('색을 바꿨으면 그 색을 지킴',
     pattShape('색을 바꾼 것').includes('FF0000')
     && !pattShape('색을 바꾼 것').includes('<a:pattFill'));
+
+  /* ── preset 도형 되돌리기 ────────────────────────────────────── */
+
+  /*
+   * 가져오기가 preset 을 경로로 펴서 벡터로 만든다. 그대로 내보내면 custGeom 이 되어
+   * 파워포인트에서 편집할 수 없다. 이름과 조절값을 적어 뒀다가, 지금 경로가 그것을 다시
+   * 그린 것과 같을 때만 되돌린다 — 고쳤으면 그 편집이 이긴다.
+   */
+  const presetDoc: Doc = {
+    ...doc,
+    slides: [{
+      name: 'preset',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [
+        {
+          type: 'shape', name: '육각형', box: box(10, 10, 100, 40),
+          geom: { kind: 'preset', prst: 'hexagon', adj: { adj: 25000, vf: 115470 } },
+          fill: { kind: 'solid', color: '18539B', transparency: 0 },
+        },
+        {
+          type: 'shape', name: '조절값 없는 것', box: box(10, 60, 60, 60),
+          geom: { kind: 'preset', prst: 'rtTriangle', adj: {} },
+          fill: { kind: 'solid', color: '888888', transparency: 0 },
+        },
+      ],
+    }],
+  };
+  const presetOut = await render(presetDoc);
+
+  console.log('\npreset 도형 되돌리기');
+  checkTruthy('이름으로 나감', presetOut.xml.includes('prst="hexagon"'));
+  checkTruthy('custGeom 이 아님', !presetOut.xml.includes('<a:custGeom>'));
+  checkTruthy('조절값이 실려 나감', presetOut.xml.includes('<a:gd name="adj" fmla="val 25000"/>'));
+  checkTruthy('조절값 둘 다', presetOut.xml.includes('<a:gd name="vf" fmla="val 115470"/>'));
+  checkTruthy('조절값이 없으면 빈 avLst',
+    /prst="rtTriangle"><a:avLst\s*\/?>/.test(presetOut.xml.replace(/\s*<\/a:avLst>/g, '')));
+  checkTruthy('표식이 남지 않음', !/~g\d+~/.test(presetOut.xml));
+
+  /*
+   * 되돌리기 판단 자체 — 적어 둔 이름을 믿는 게 아니라 지금 경로와 대조해야 한다.
+   * 경로를 고쳤는데도 되돌리면 그 편집이 통째로 날아간다.
+   */
+  const HEX = { prst: 'hexagon', adj: {}, w: 100, h: 40 };
+  const drawn = presetPath('hexagon', 100, 40, {})!;
+  const bounds = pathBounds(drawn.data);
+  const atOrigin = translatePath(drawn.data, -bounds.x, -bounds.y);
+  const fakeNode = (data: string, w: number, h: number, stored: unknown = HEX): SceneNode =>
+    ({ width: w, height: h, vectorPaths: [{ data, windingRule: 'NONZERO' }],
+      getPluginData: (k: string) => (k === 'preset' ? JSON.stringify(stored) : '') } as never);
+
+  console.log('\npreset 되돌리기 판단');
+  checkTruthy('그대로면 되돌린다',
+    restorePreset(fakeNode(atOrigin, bounds.w, bounds.h))?.prst === 'hexagon');
+  checkTruthy('경로를 고쳤으면 되돌리지 않는다',
+    restorePreset(fakeNode(`${atOrigin} L5 5`, bounds.w, bounds.h)) === null);
+  checkTruthy('점 하나만 옮겨도 되돌리지 않는다',
+    restorePreset(fakeNode(atOrigin.replace(/^M[\d.]+ [\d.]+/, 'M9 9'), bounds.w, bounds.h)) === null);
+  checkTruthy('크기만 바꾼 것은 되돌린다', (() => {
+    const big = presetPath('hexagon', 200, 80, {})!;
+    const b2 = pathBounds(big.data);
+    return restorePreset(
+      fakeNode(translatePath(big.data, -b2.x, -b2.y), b2.w, b2.h),
+    )?.prst === 'hexagon';
+  })());
+  checkTruthy('적어 둔 게 없으면 되돌리지 않는다',
+    restorePreset(fakeNode(atOrigin, bounds.w, bounds.h, {}) as SceneNode) === null);
 
   /* ── 표 ──────────────────────────────────────────────────────── */
 

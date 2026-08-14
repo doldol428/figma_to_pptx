@@ -577,6 +577,13 @@ function createShape(spec: ShapeNode): SceneNode {
       windingRule: geom.evenOdd ? 'EVENODD' : 'NONZERO',
       data: translatePath(geom.data, -pathBox.x, -pathBox.y),
     }];
+    /*
+     * preset 이름과 조절값을 적어 둔다. 내보낼 때 지금 경로가 이것을 다시 그린 것과 같은지
+     * 대조해서 같을 때만 `<a:prstGeom>` 으로 되돌린다 — 경로를 고쳤으면 그 편집이 이긴다.
+     * 이름 상자(w·h)도 같이 적는다. 호처럼 경로가 상자 일부만 덮는 도형은 그 상자를
+     * 되살려야 크기가 맞는다.
+     */
+    if (geom.preset) v.setPluginData(KEY.preset, JSON.stringify(geom.preset));
     vector = v;
     node = v;
   } else {

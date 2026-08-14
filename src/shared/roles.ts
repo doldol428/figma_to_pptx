@@ -100,4 +100,11 @@ export const KEY = {
    * 않는다. Figma 에서 칸을 병합할 방법 자체가 없으니 이 기록이 낡을 일도 없다.
    */
   table: 'table',
+  /**
+   * 벡터가 원래 어떤 preset 도형이었는지 (JSON: `{ prst, adj, w, h }`).
+   *
+   * **되돌리기 전에 반드시 대조한다.** 이 이름으로 다시 그린 경로가 지금 경로와 다르면
+   * 사람이 고친 것이므로 그대로 custGeom 으로 내보낸다. 이름만 믿으면 편집이 날아간다.
+   */
+  preset: 'preset',
 } as const;
