@@ -31,6 +31,8 @@ export async function buildPptx(doc: Doc): Promise<Blob> {
 export class PptxBuilder {
   private readonly pptx = new PptxGenJS();
   private readonly scale: Scale;
+  /** Figma 이미지 주소 → 이미 만들어 둔 미디어 파일. 같은 그림은 그 파일을 함께 가리킨다. */
+  private readonly byKey = new Map<string, string>();
 
   constructor(meta: DocMeta) {
     this.scale = new Scale(meta);
@@ -38,7 +40,7 @@ export class PptxBuilder {
   }
 
   add(slide: SlideSpec): void {
-    addSlideTo(this.pptx, slide, this.scale);
+    addSlideTo(this.pptx, slide, this.scale, this.byKey);
   }
 
   async finish(): Promise<Blob> {
@@ -149,7 +151,9 @@ function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale): void {
 
 }
 
-function addSlideTo(pptx: PptxGenJS, slide: SlideSpec, scale: Scale): void {
+function addSlideTo(
+  pptx: PptxGenJS, slide: SlideSpec, scale: Scale, byKey = new Map<string, string>(),
+): void {
   const s = slide.master ? pptx.addSlide({ masterName: slide.master }) : pptx.addSlide();
 
   /*
@@ -170,8 +174,28 @@ function addSlideTo(pptx: PptxGenJS, slide: SlideSpec, scale: Scale): void {
   for (const item of slide.items) {
     if (item.type === 'shape') addShape(pptx, s, item, scale);
     else if (item.type === 'text') addText(s, item, scale);
-    else addImage(s, item, scale);
+    else {
+      addImage(s, item, scale);
+      if (item.key) reuseByKey(s, item.key, byKey);
+    }
   }
+}
+
+/**
+ * 방금 만들어진 미디어 관계를, 같은 그림을 이미 담고 있는 파일로 돌려놓는다.
+ *
+ * Figma 의 imageHash 는 내용 주소라 같은 그림이면 반드시 같다. 몇 MB 짜리 base64 를
+ * 맞대볼 필요 없이 이 40자만 보면 된다. 다시 렌더해서 뽑은 그림에는 이 주소가 없어,
+ * 그런 것들은 마지막에 내용 비교로 걸러진다(shareRepeatedMedia).
+ */
+function reuseByKey(slide: Slide, key: string, byKey: Map<string, string>): void {
+  const rels = (slide as unknown as { _relsMedia?: MediaRel[] })._relsMedia;
+  const rel = rels?.[rels.length - 1];
+  if (!rel?.Target) return;
+
+  const first = byKey.get(key);
+  if (first) rel.Target = first;
+  else byKey.set(key, rel.Target);
 }
 
 /**

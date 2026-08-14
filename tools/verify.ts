@@ -605,9 +605,31 @@ async function main(): Promise<void> {
     imageRefs += (rels.match(/Type="[^"]*\/image"/g) ?? []).length;
   }
 
-  console.log('\n같은 이미지 공유');
+  console.log('\n같은 이미지 공유 — 내용 비교로');
   check('참조는 4번 (같은 것 3 + 다른 것 1)', imageRefs, 4);
   check('저장된 파일은 2개', mediaParts.length, 2);
+
+  /*
+   * Figma 의 imageHash 가 있으면 그것만 보고 판정한다 — 내용 주소라 같은 그림이면 반드시 같다.
+   * 여기서는 그 경로가 실제로 동작하는지 보려고, 데이터가 달라도 열쇠가 같으면 합쳐지는지 본다.
+   * (실제로는 열쇠가 같은데 데이터가 다를 수 없다. Figma 가 내용으로 주소를 매기기 때문이다.)
+   */
+  const keyed: Doc = {
+    ...doc,
+    slides: [1, 2].map((n) => ({
+      name: `${n}장`,
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [{
+        type: 'image' as const, name: '같은 그림', box: box(10, 10, 50, 50),
+        key: 'figma-hash-abc', data: n === 1 ? PNG : OTHER,
+        mime: 'image/png' as const, sizing: 'stretch' as const,
+      }],
+    })),
+  };
+  const keyedOut = await render(keyed);
+  const keyedParts = Object.keys(keyedOut.zip.files).filter((n) => /^ppt\/media\/.+\.\w+$/.test(n));
+  console.log('\n같은 이미지 공유 — Figma 주소로');
+  check('열쇠가 같으면 파일 하나', keyedParts.length, 1);
 
   /* ── 도형 id 충돌 ────────────────────────────────────────────── */
 

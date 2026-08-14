@@ -131,6 +131,12 @@ export interface ImageItem {
   type: 'image';
   name: string;
   box: Box;
+  /**
+   * Figma 의 imageHash — 이미지 **내용**의 주소다.
+   * 같은 바이트를 몇 번 넣든 같은 해시가 나오므로, 같은 그림인지 여기서 바로 알 수 있다.
+   * 노드를 다시 렌더해서 뽑은 경우에는 원본 그림이 아니라 없다.
+   */
+  key?: string;
   /** base64 (data URI 접두사 없음) */
   data: string;
   mime: 'image/png' | 'image/jpeg' | 'image/gif';
