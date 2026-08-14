@@ -62,6 +62,12 @@
 
   /* 머리 영역도 같은 높이로 잡는다. 탭을 옮길 때 아래 것들이 덜컹이지 않게. */
   .pane-head { min-height: 90px; }
+  /*
+   * 두 탭의 '값' 줄 높이를 못박는다. 기준은 18px 글자 한 줄 = 27px.
+   * 가져오기 쪽은 26px 버튼이 줄 높이를 정해서 이 값이 없으면 카드가 1px 낮아지고,
+   * 탭을 옮길 때 창이 딱 그만큼 움직인다.
+   */
+  .head-value { min-height: 27px; }
   .head-row { display: flex; align-items: center; gap: 8px; }
   /* 파일명은 남는 폭을 다 쓰고, 길면 말줄임 */
   #fileName {
@@ -218,7 +224,7 @@
   <div id="paneExport">
   <div class="card pane-head">
     <h1 id="slideSizeTitle"></h1>
-    <div class="size" id="size">—</div>
+    <div class="size head-value" id="size">—</div>
     <div class="sub" id="detail"></div>
   </div>
 
@@ -240,7 +246,7 @@
     <!-- 내보내기 탭과 같은 짜임 — 머리 영역(선택한 것) · 옵션 한 줄 · 주 버튼 -->
     <div class="card pane-head">
       <h1 id="importTitle"></h1>
-      <div class="head-row">
+      <div class="head-row head-value">
         <div class="size" id="fileName">—</div>
         <button type="button" class="control secondary pick" id="pick"></button>
       </div>

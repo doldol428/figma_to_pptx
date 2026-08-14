@@ -105,7 +105,7 @@ const KO: Strings = {
 
   tabExport: 'PPTX 내보내기',
   tabImport: 'PPTX 가져오기',
-  pickFile: 'PPTX 파일 선택',
+  pickFile: '파일 선택',
   reading: (done, total) => `읽는 중… ${done}/${total}`,
   parsing: '파일 분석 중…',
   creating: (done, total) => `프레임 만드는 중… ${done}/${total}`,
@@ -179,7 +179,7 @@ const EN: Strings = {
 
   tabExport: 'Export PPTX',
   tabImport: 'Import PPTX',
-  pickFile: 'Choose a PPTX file',
+  pickFile: 'Choose file',
   reading: (done, total) => `Reading… ${done}/${total}`,
   parsing: 'Reading the file…',
   creating: (done, total) => `Creating frames… ${done}/${total}`,
