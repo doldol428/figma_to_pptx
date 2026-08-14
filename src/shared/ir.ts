@@ -21,11 +21,35 @@ export interface Warning {
   message: string;
 }
 
+export interface GradientStop {
+  /** 0 ~ 1 */
+  position: number;
+  color: Hex;
+  /** 0(불투명) ~ 100(투명) */
+  transparency: number;
+}
+
+/**
+ * 그라디언트 — **단색 위에 얹히는 덤**이다.
+ *
+ * PptxGenJS 4.x 는 칠을 'solid' | 'none' 으로만 받는다. 그래서 색은 늘 평균 단색으로 넘기고,
+ * 이 값은 파일을 굳히기 직전 XML 에 `<a:gradFill>` 로 덧써 넣는다(ui/gradient.ts).
+ * 덧쓰기가 실패해도 평균 단색이 남으므로, 이 필드가 무시되면 딱 예전 동작이 된다.
+ */
+export interface Gradient {
+  type: 'linear' | 'radial';
+  /** 도. 화면 기준 시계방향 — PPTX `<a:lin ang>` 과 같은 규약 */
+  angle: number;
+  stops: GradientStop[];
+}
+
 export interface SolidFill {
   kind: 'solid';
   color: Hex;
   /** 0(불투명) ~ 100(투명) */
   transparency: number;
+  /** 이 단색이 그라디언트의 평균값이면 원본이 여기 남는다 */
+  gradient?: Gradient;
 }
 
 export interface NoFill {
@@ -40,6 +64,8 @@ export interface Stroke {
   /** px */
   width: number;
   dashType?: 'solid' | 'dash' | 'sysDot' | 'dashDot';
+  /** 이 단색이 그라디언트의 평균값이면 원본이 여기 남는다 */
+  gradient?: Gradient;
 }
 
 export interface Shadow {
@@ -125,6 +151,8 @@ export interface TextItem {
   /** 자동 줄바꿈 (Figma textAutoResize 가 WIDTH_AND_HEIGHT 면 false) */
   wrap: boolean;
   shadow?: Shadow;
+  /** 글자 전체에 걸린 그라디언트. 런의 색은 그 평균값이다. */
+  gradient?: Gradient;
   /**
    * 이 글자를 담는 도형.
    *

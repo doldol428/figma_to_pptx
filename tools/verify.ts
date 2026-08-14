@@ -8,7 +8,7 @@
  */
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
-import type { Box, Doc, TextItem } from '../src/shared/ir';
+import type { Box, Doc, Gradient, TextItem } from '../src/shared/ir';
 import { fitsInMaster } from '../src/shared/ir';
 import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
@@ -600,6 +600,8 @@ async function main(): Promise<void> {
       items: [{
         type: 'text', name: '상자', box: box(20, 20, 80, 30),
         align: 'center', valign: 'middle', wrap: true,
+        // 그림자는 도형 쪽에 붙어 있다. 합칠 때 안 챙기면 조용히 사라진다 (실측 56개).
+        shadow: { type: 'outer', angle: 45, offset: 2, blur: 4, color: '000000', opacity: 0.3 },
         shape: {
           geom: { kind: 'roundRect', radius: 4 },
           fill: { kind: 'solid', color: 'E3F2FD', transparency: 0 },
@@ -620,6 +622,84 @@ async function main(): Promise<void> {
   checkTruthy('그 도형이 글자를 품음', /<p:txBody>[\s\S]*도형 안의 글자/.test(shapeTextOut.xml));
   checkTruthy('도형 채우기가 살아 있음', shapeTextOut.xml.indexOf('E3F2FD') >= 0);
   checkTruthy('도형 선이 살아 있음', shapeTextOut.xml.indexOf('18539B') >= 0);
+  checkTruthy('도형의 그림자를 물려받음', shapeTextOut.xml.indexOf('<a:outerShdw') >= 0);
+
+  /* ── 그라디언트 ──────────────────────────────────────────────── */
+
+  /*
+   * PptxGenJS 는 칠을 'solid' | 'none' 으로만 받는다 — 소스에 gradFill 을 쓰는 코드가 없다.
+   * 그래서 평균 단색으로 만들어 두고 파일을 굳히기 직전 XML 에 덧쓴다. 실측 덱의 그라디언트
+   * 464개가 전부 이 길로 죽고 있었다 (슬라이드 3 의 가운데 원이 대표적).
+   */
+  const linear: Gradient = {
+    type: 'linear',
+    angle: 45,
+    stops: [
+      { position: 0, color: '6581C0', transparency: 0 },
+      { position: 1, color: '3A8F96', transparency: 50 },
+    ],
+  };
+  const radial: Gradient = {
+    type: 'radial',
+    angle: 0,
+    stops: [
+      { position: 0, color: 'FFFFFF', transparency: 0 },
+      { position: 1, color: '000000', transparency: 0 },
+    ],
+  };
+  const grads: Doc = {
+    ...doc,
+    slides: [{
+      name: '그라디언트',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [
+        {
+          type: 'shape', name: '가운데 원', box: box(10, 10, 100, 100),
+          geom: { kind: 'ellipse' },
+          fill: { kind: 'solid', color: '4F88AB', transparency: 0, gradient: linear },
+        },
+        {
+          type: 'shape', name: '방사형', box: box(120, 10, 60, 60),
+          geom: { kind: 'rect' },
+          fill: { kind: 'solid', color: '808080', transparency: 0, gradient: radial },
+        },
+        {
+          type: 'shape', name: '테두리만', box: box(10, 120, 60, 60),
+          geom: { kind: 'rect' },
+          fill: { kind: 'none' },
+          stroke: { color: '4F88AB', transparency: 0, width: 2, dashType: 'solid', gradient: linear },
+        },
+        {
+          type: 'text', name: '글자', box: box(120, 120, 100, 20),
+          align: 'left', valign: 'top', wrap: true, gradient: linear,
+          runs: [{
+            text: '그라디언트 글자', fontFace: 'Arial', fontSize: 12, bold: false,
+            italic: false, underline: false, strike: false, color: '4F88AB', transparency: 0,
+          }],
+        },
+      ],
+    }],
+  };
+  const gradOut = await render(grads);
+  const shapesOf = (xml: string): string[] => xml.split('<p:sp>').slice(1);
+  const gradShapes = shapesOf(gradOut.xml);
+  const shapeNamed = (n: string): string => gradShapes.find((s) => s.includes(`name="${n}"`)) ?? '';
+
+  console.log('\n그라디언트');
+  check('그라디언트 4개가 나감', (gradOut.xml.match(/<a:gradFill/g) ?? []).length, 4);
+  checkTruthy('이름에 표식이 남지 않음', !/~g\d+~/.test(gradOut.xml));
+  checkTruthy('정지점 색이 둘 다 있음',
+    shapeNamed('가운데 원').includes('6581C0') && shapeNamed('가운데 원').includes('3A8F96'));
+  // 45° × 60000 = 2700000. 실측 덱의 가운데 원이 정확히 이 각이다.
+  checkTruthy('각도가 EMU 로 나감', shapeNamed('가운데 원').includes('ang="2700000"'));
+  checkTruthy('정지점 투명도가 살아 있음', shapeNamed('가운데 원').includes('<a:alpha val="50000"/>'));
+  checkTruthy('방사형은 path 로 나감', shapeNamed('방사형').includes('<a:path path="circle">'));
+  checkTruthy('테두리 그라디언트는 a:ln 안에',
+    /<a:ln[^>]*>\s*<a:gradFill/.test(shapeNamed('테두리만')));
+  checkTruthy('테두리만인 도형의 면은 안 채워짐',
+    (shapeNamed('테두리만').match(/<a:gradFill/g) ?? []).length === 1);
+  checkTruthy('글자 그라디언트는 txBody 안에',
+    /<p:txBody>[\s\S]*<a:gradFill/.test(shapeNamed('글자')));
 
   /* ── PowerPoint 가 복구를 요구하는 값들 ──────────────────────── */
 

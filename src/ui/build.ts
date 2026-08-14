@@ -1,9 +1,11 @@
 import PptxGenJS from 'pptxgenjs';
 // IR 의 Slide 와 PptxGenJS 의 Slide 가 이름이 겹친다. 이쪽은 "만들 내용"이라 SlideSpec 으로 받는다.
 import type {
-  Box, Doc, DocMeta, Geom, ImageItem, PathPoint, ShapeItem, Slide as SlideSpec, TextItem,
+  Box, Doc, DocMeta, Fill, Geom, Gradient, ImageItem, PathPoint, ShapeItem,
+  Slide as SlideSpec, Stroke, TextItem,
 } from '../shared/ir';
 import { ptToIn } from '../shared/units';
+import { Marker, hookSlideXml } from './gradient';
 
 /**
  * IR → PPTX.
@@ -17,8 +19,7 @@ import { ptToIn } from '../shared/units';
  * 이 파일의 Scale 이 px → inch 변환이 일어나는 유일한 지점이다.
  */
 export async function buildPptx(doc: Doc): Promise<Blob> {
-  const blob = await composePptx(doc).write({ outputType: 'blob' });
-  return blob as Blob;
+  return await composePptx(doc).write({ outputType: 'blob' }) as Blob;
 }
 
 /**
@@ -33,36 +34,50 @@ export class PptxBuilder {
   private readonly scale: Scale;
   /** Figma 이미지 주소 → 이미 만들어 둔 미디어 파일. 같은 그림은 그 파일을 함께 가리킨다. */
   private readonly byKey = new Map<string, string>();
+  /** PptxGenJS 가 쓰지 못하는 그라디언트를, 파일을 굳힐 때 XML 에 덧쓰려고 적어 둔다. */
+  private readonly marker = new Marker();
 
   constructor(meta: DocMeta) {
     this.scale = new Scale(meta);
-    definePresentation(this.pptx, meta, this.scale);
+    definePresentation(this.pptx, meta, this.scale, this.marker);
   }
 
   add(slide: SlideSpec): void {
-    addSlideTo(this.pptx, slide, this.scale, this.byKey);
+    addSlideTo(this.pptx, slide, this.scale, this.marker, this.byKey);
+  }
+
+  /**
+   * 파일로 굳힌다. 그라디언트 덧쓰기가 여기서만 걸리므로 내보내기는 모두 이 문을 지나야 한다 —
+   * `presentation.write()` 를 직접 부르면 단색으로 나간다.
+   */
+  async write(props: Parameters<PptxGenJS['write']>[0]): ReturnType<PptxGenJS['write']> {
+    shareRepeatedMedia(this.pptx);
+    const undo = hookSlideXml(this.marker.parts);
+    try {
+      return await this.pptx.write(props);
+    } finally {
+      undo();
+    }
   }
 
   async finish(): Promise<Blob> {
-    shareRepeatedMedia(this.pptx);
-    return await this.pptx.write({ outputType: 'blob' }) as Blob;
+    return await this.write({ outputType: 'blob' }) as Blob;
   }
 
-  /** 조립 중인 인스턴스. 출력 형식을 직접 정해야 하는 검증 도구용. */
+  /** 조립 중인 인스턴스. 내부를 들여다봐야 하는 검증 도구용. */
   get presentation(): PptxGenJS {
     return this.pptx;
   }
 }
 
 /**
- * IR 을 PptxGenJS 인스턴스까지만 조립한다. 출력 형식은 호출부가 정한다(브라우저 blob / Node buffer).
+ * IR 을 조립기까지만 만든다. 출력 형식은 호출부가 정한다(브라우저 blob / Node buffer).
  * 한 장씩 붙이는 경로를 그대로 쓴다 — 검증이 실제 내보내기와 다른 길을 타면 의미가 없다.
  */
-export function composePptx(doc: Doc): PptxGenJS {
+export function composePptx(doc: Doc): PptxBuilder {
   const builder = new PptxBuilder(doc);
   for (const slide of doc.slides) builder.add(slide);
-  shareRepeatedMedia(builder.presentation);
-  return builder.presentation;
+  return builder;
 }
 
 /** PptxGenJS 내부의 미디어 관계 항목 — 공개 타입이 아니라 필요한 것만 좁게 적는다. */
@@ -118,8 +133,12 @@ function shareRepeatedMedia(pptx: PptxGenJS): void {
   for (const rel of parts.masterSlide?._relsMedia ?? []) share(rel);
 }
 
+/** 표식이 붙을 XML 부품 경로. PptxGenJS 는 정의 순서대로 1번부터 번호를 매긴다. */
+const slidePart = (index: number): string => `ppt/slides/slide${index}.xml`;
+const layoutPart = (index: number): string => `ppt/slideLayouts/slideLayout${index}.xml`;
+
 /** 슬라이드 크기와 공통 서식 — 장을 붙이기 전에 끝나 있어야 한다. */
-function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale): void {
+function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale, marker: Marker): void {
   pptx.defineLayout({
     name: 'FIGMA_FRAME',
     width: ptToIn(doc.slideWPt),
@@ -131,11 +150,12 @@ function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale): void {
    * 공통 서식을 먼저 정의한다 — 슬라이드가 masterName 으로 가리키려면 이미 있어야 한다.
    * 이것이 진짜 slideLayout 파트가 되어, 머리글을 PowerPoint 에서도 한 번만 고치면 된다.
    */
-  for (const master of doc.masters) {
+  for (const [i, master] of doc.masters.entries()) {
+    const part = layoutPart(i + 1);
     pptx.defineSlideMaster({
       title: master.name,
       objects: doc.masters.length > 0
-        ? master.items.map((item) => masterObject(item, scale))
+        ? master.items.map((item) => masterObject(item, scale, marker, part))
         : undefined,
       slideNumber: master.slideNumber
         ? {
@@ -152,9 +172,11 @@ function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale): void {
 }
 
 function addSlideTo(
-  pptx: PptxGenJS, slide: SlideSpec, scale: Scale, byKey = new Map<string, string>(),
+  pptx: PptxGenJS, slide: SlideSpec, scale: Scale, marker: Marker,
+  byKey = new Map<string, string>(),
 ): void {
   const s = slide.master ? pptx.addSlide({ masterName: slide.master }) : pptx.addSlide();
+  const part = slidePart((pptx as unknown as { slides: unknown[] }).slides.length);
 
   /*
    * 슬라이드 번호는 레이아웃에만 둔다.
@@ -172,8 +194,8 @@ function addSlideTo(
   }
 
   for (const item of slide.items) {
-    if (item.type === 'shape') addShape(s, item, scale);
-    else if (item.type === 'text') addText(s, item, scale);
+    if (item.type === 'shape') addShape(s, item, scale, marker, part);
+    else if (item.type === 'text') addText(s, item, scale, marker, part);
     else {
       addImage(s, item, scale);
       if (item.key) reuseByKey(s, item.key, byKey);
@@ -282,18 +304,33 @@ function position(box: Box, s: Scale): Position {
   return pos;
 }
 
-function addShape(slide: Slide, item: ShapeItem, s: Scale): void {
-  const { shape, opts } = shapeSpec(item, s);
+function addShape(slide: Slide, item: ShapeItem, s: Scale, marker: Marker, part: string): void {
+  const { shape, opts } = shapeSpec(item, s, marker, part);
   slide.addShape(shape, opts);
+}
+
+/**
+ * 이름 뒤에 덧쓰기 표식을 붙인다.
+ * PptxGenJS 가 그리지 못하는 그라디언트를 나중에 이 이름으로 찾아 XML 에 끼워 넣는다.
+ */
+function named(name: string, marker: Marker, part: string, grads: {
+  fill?: Fill; line?: Stroke; text?: Gradient;
+}): string {
+  const tag = marker.claim(part, {
+    fill: grads.fill?.kind === 'solid' ? grads.fill.gradient : undefined,
+    line: grads.line?.gradient,
+    text: grads.text,
+  });
+  return tag ? `${name} ${tag}` : name;
 }
 
 /** 도형 하나의 PptxGenJS 인자. 슬라이드와 공통 서식이 같은 값을 쓴다. */
 function shapeSpec(
-  item: ShapeItem, s: Scale,
+  item: ShapeItem, s: Scale, marker: Marker, part: string,
 ): { shape: PptxGenJS.SHAPE_NAME; opts: PptxGenJS.ShapeProps } {
   const opts: PptxGenJS.ShapeProps = {
     ...position(item.box, s),
-    objectName: item.name,
+    objectName: named(item.name, marker, part, { fill: item.fill, line: item.stroke }),
   };
 
   /*
@@ -391,14 +428,14 @@ function toPoints(points: PathPoint[], s: Scale): NonNullable<PptxGenJS.ShapePro
   });
 }
 
-function addText(slide: Slide, item: TextItem, s: Scale): void {
-  const { runs, opts } = textSpec(item, s);
+function addText(slide: Slide, item: TextItem, s: Scale, marker: Marker, part: string): void {
+  const { runs, opts } = textSpec(item, s, marker, part);
   slide.addText(runs, opts);
 }
 
 /** 텍스트 하나의 PptxGenJS 인자. 슬라이드와 공통 서식이 같은 값을 쓴다. */
 function textSpec(
-  item: TextItem, s: Scale,
+  item: TextItem, s: Scale, marker: Marker, part: string,
 ): { runs: PptxGenJS.TextProps[]; opts: PptxGenJS.TextPropsOptions } {
   const runs: PptxGenJS.TextProps[] = item.runs.map((r) => {
     const options: PptxGenJS.TextPropsOptions = {
@@ -421,7 +458,9 @@ function textSpec(
 
   const opts: PptxGenJS.TextPropsOptions = {
     ...position(item.box, s),
-    objectName: item.name,
+    objectName: named(item.name, marker, part, {
+      fill: item.shape?.fill, line: item.shape?.stroke, text: item.gradient,
+    }),
     align: item.align,
     valign: item.valign,
     wrap: item.wrap,
@@ -486,16 +525,16 @@ function imageSpec(item: ImageItem, s: Scale): PptxGenJS.ImageProps {
  * (shared/ir.ts 의 fitsInMaster 가 걸러 슬라이드 쪽에 남긴다).
  */
 function masterObject(
-  item: ShapeItem | TextItem | ImageItem, s: Scale,
+  item: ShapeItem | TextItem | ImageItem, s: Scale, marker: Marker, part: string,
 ): NonNullable<PptxGenJS.SlideMasterProps['objects']>[number] {
   if (item.type === 'image') {
     return { image: imageSpec(item, s) } as never;
   }
   if (item.type === 'shape') {
-    const { shape, opts } = shapeSpec(item, s);
+    const { shape, opts } = shapeSpec(item, s, marker, part);
     return { text: { text: '', options: { ...opts, shape } as PptxGenJS.TextPropsOptions } } as never;
   }
-  const { runs, opts } = textSpec(item, s);
+  const { runs, opts } = textSpec(item, s, marker, part);
   const run = runs[0];
   return {
     text: { text: run?.text ?? '', options: { ...opts, ...run?.options } },

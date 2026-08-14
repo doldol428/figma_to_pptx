@@ -1,5 +1,5 @@
 import { t } from '../shared/i18n';
-import type { Fill, Hex, Shadow, Stroke } from '../shared/ir';
+import type { Fill, Gradient, Hex, Shadow, Stroke } from '../shared/ir';
 
 export function toHex(c: RGB | RGBA): Hex {
   const ch = (v: number) => {
@@ -33,11 +33,38 @@ export function countVisiblePaints(paints: readonly Paint[] | typeof figma.mixed
 }
 
 /**
+ * PPTX 가 그대로 담을 수 있는 그라디언트인가.
+ *
+ * 선형과 방사형만 `<a:gradFill>` 로 옮겨진다. 원뿔형(ANGULAR)·마름모형(DIAMOND)은
+ * DrawingML 에 대응이 없어 단색 평균으로 남는다.
+ */
+function gradientOf(paint: GradientPaint): Gradient | undefined {
+  if (paint.type !== 'GRADIENT_LINEAR' && paint.type !== 'GRADIENT_RADIAL') return undefined;
+
+  /*
+   * Figma 는 단위 사각형에서 왼→오른쪽으로 흐르는 그라디언트를 gradientTransform 으로 돌린다.
+   * 첫 행이 곧 그 방향벡터라 각도는 거기서 바로 나온다 (가져오기의 역산 — import/…/create.ts).
+   */
+  const m = paint.gradientTransform;
+  const angle = (Math.atan2(m[0][1], m[0][0]) * 180) / Math.PI;
+
+  return {
+    type: paint.type === 'GRADIENT_RADIAL' ? 'radial' : 'linear',
+    angle: ((angle % 360) + 360) % 360,
+    stops: paint.gradientStops.map((s) => ({
+      position: clamp01(s.position),
+      color: toHex(s.color),
+      transparency: transparency(s.color.a ?? 1),
+    })),
+  };
+}
+
+/**
  * 그라디언트 → 단색 근사.
  *
- * PptxGenJS 4.x 는 도형 fill 을 'solid' | 'none' 으로만 노출한다.
- * 정지점들을 위치 가중 평균해서 가장 덜 튀는 단색을 만들고, 호출부에서 경고를 남긴다.
- * (실제 gradFill 주입은 pptx 재패키징이 필요 — README 의 다음 단계 참고)
+ * PptxGenJS 4.x 는 도형 fill 을 'solid' | 'none' 으로만 노출하므로 정지점들을 위치 가중
+ * 평균해서 가장 덜 튀는 단색을 만든다. 선형·방사형은 이 단색 위에 원본을 얹어 두었다가
+ * (`Fill.gradient`) 파일을 굳히기 직전 XML 에 덧써 넣는다 — ui/gradient.ts.
  */
 function averageGradient(paint: GradientPaint): { color: Hex; opacity: number } {
   const stops = paint.gradientStops;
@@ -104,15 +131,17 @@ export function resolveFill(
     paint.type === 'GRADIENT_DIAMOND'
   ) {
     const avg = averageGradient(paint);
-    return {
-      kind: 'fill',
-      fill: {
-        kind: 'solid',
-        color: avg.color,
-        transparency: transparency(avg.opacity * pOpacity * nodeOpacity),
-      },
-      note: t().gradientApproximated(paint.type, avg.color),
+    const fill: Fill = {
+      kind: 'solid',
+      color: avg.color,
+      transparency: transparency(avg.opacity * pOpacity * nodeOpacity),
     };
+    const gradient = gradientOf(paint);
+    if (gradient) {
+      fill.gradient = gradient;
+      return { kind: 'fill', fill };
+    }
+    return { kind: 'fill', fill, note: t().gradientApproximated(paint.type, avg.color) };
   }
 
   return { kind: 'fill', fill: { kind: 'none' } };
@@ -163,6 +192,7 @@ export function resolveStroke(
   if (weight <= 0) return undefined;
 
   let color: Hex;
+  let gradient: Gradient | undefined;
   let opacity = paint.opacity ?? 1;
   if (paint.type === 'SOLID') {
     color = toHex(paint.color);
@@ -170,16 +200,26 @@ export function resolveStroke(
     const avg = averageGradient(paint as GradientPaint);
     color = avg.color;
     opacity *= avg.opacity;
+    gradient = gradientOf(paint as GradientPaint);
   } else {
     return undefined;
   }
 
-  return {
+  const stroke: Stroke = {
     color,
     transparency: transparency(opacity * nodeOpacity),
     width: weight,
     dashType: dashOf(node.dashPattern),
   };
+  if (gradient) stroke.gradient = gradient;
+  return stroke;
+}
+
+/** 텍스트 노드 전체에 걸린 그라디언트. 런의 색은 그 평균값이라 별도로 얹는다. */
+export function textGradient(paints: readonly Paint[] | typeof figma.mixed): Gradient | undefined {
+  const paint = topVisiblePaint(paints);
+  if (!paint || !paint.type.startsWith('GRADIENT_')) return undefined;
+  return gradientOf(paint as GradientPaint);
 }
 
 function dashOf(pattern: readonly number[] | undefined): Stroke['dashType'] {
