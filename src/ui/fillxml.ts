@@ -1,12 +1,12 @@
 import JSZip from 'jszip';
-import type { Gradient } from '../shared/ir';
+import type { Fill, Gradient, Pattern, Stroke } from '../shared/ir';
 
 /**
- * 그라디언트 덧쓰기.
+ * PptxGenJS 가 쓰지 못하는 채우기를 XML 에 덧쓴다.
  *
- * PptxGenJS 4.x 는 칠을 'solid' | 'none' 으로만 받는다 — 소스에 `gradFill` 을 쓰는 코드가
- * 아예 없다. 그래서 색은 평균 단색으로 정상 생성해 두고, 파일을 굳히기 직전에 그 도형의
- * `<a:solidFill>` 을 `<a:gradFill>` 로 바꿔 끼운다.
+ * PptxGenJS 4.x 는 칠을 'solid' | 'none' 으로만 받는다 — 소스에 `gradFill` 이나 `pattFill`
+ * 을 쓰는 코드가 아예 없다. 그래서 색은 평균 단색으로 정상 생성해 두고, 파일을 굳히기 직전에
+ * 그 도형의 `<a:solidFill>` 을 제 것으로 바꿔 끼운다.
  *
  * 도형을 찾는 열쇠는 이름이다. PptxGenJS 는 `objectName` 을 `<p:cNvPr name="…">` 에 그대로
  * 쓰므로, 표식을 붙여 내보내고 덧쓰면서 떼어낸다. 이름이 겹쳐도 표식은 고유해서 헷갈리지 않는다.
@@ -14,15 +14,15 @@ import type { Gradient } from '../shared/ir';
  * 덧쓰기가 실패해도 평균 단색이 그대로 남는다. 나빠질 수는 없고 맞을 때만 좋아진다.
  */
 
-/** 도형 하나에 덧쓸 것들 */
+/** 도형 하나에 덧쓸 XML 조각들 */
 export interface Mark {
   id: number;
   /** 도형 자체의 칠 */
-  fill?: Gradient;
+  fill?: string;
   /** 테두리 */
-  line?: Gradient;
+  line?: string;
   /** 글자 (그 도형 안의 모든 런) */
-  text?: Gradient;
+  text?: string;
 }
 
 /** `ppt/slides/slide3.xml` → 그 장에 덧쓸 표식들 */
@@ -36,17 +36,13 @@ export class Marker {
   private next = 1;
   readonly parts: Marks = new Map();
 
-  claim(part: string, grads: Omit<Mark, 'id'>): string | null {
-    if (!grads.fill && !grads.line && !grads.text) return null;
-    const mark: Mark = { id: this.next++, ...grads };
+  claim(part: string, frags: Omit<Mark, 'id'>): string | null {
+    if (!frags.fill && !frags.line && !frags.text) return null;
+    const mark: Mark = { id: this.next++, ...frags };
     const list = this.parts.get(part);
     if (list) list.push(mark);
     else this.parts.set(part, [mark]);
     return tag(mark.id);
-  }
-
-  get empty(): boolean {
-    return this.parts.size === 0;
   }
 }
 
@@ -72,17 +68,19 @@ const FULL_TURN = 21600000;
 
 /** 0..100 투명도 → `<a:alpha>`. 불투명하면 아무것도 쓰지 않는다 (기본값이 100%). */
 function alphaOf(transparency: number): string {
-  if (!(transparency > 0)) return '';
-  return `<a:alpha val="${Math.round((100 - transparency) * 1000)}"/>`;
+  return transparency > 0 ? `<a:alpha val="${Math.round((100 - transparency) * 1000)}"/>` : '';
+}
+
+function clr(color: string, transparency: number): string {
+  const inner = alphaOf(transparency);
+  const val = color.toUpperCase();
+  return inner ? `<a:srgbClr val="${val}">${inner}</a:srgbClr>` : `<a:srgbClr val="${val}"/>`;
 }
 
 export function gradFillXml(g: Gradient): string {
   const stops = g.stops.map((s) => {
-    const inner = alphaOf(s.transparency);
-    const clr = inner
-      ? `<a:srgbClr val="${s.color.toUpperCase()}">${inner}</a:srgbClr>`
-      : `<a:srgbClr val="${s.color.toUpperCase()}"/>`;
-    return `<a:gs pos="${Math.round(Math.max(0, Math.min(1, s.position)) * 100000)}">${clr}</a:gs>`;
+    const pos = Math.round(Math.max(0, Math.min(1, s.position)) * 100000);
+    return `<a:gs pos="${pos}">${clr(s.color, s.transparency)}</a:gs>`;
   }).join('');
 
   /*
@@ -94,6 +92,32 @@ export function gradFillXml(g: Gradient): string {
     : `<a:lin ang="${(Math.round(g.angle * 60000) % FULL_TURN + FULL_TURN) % FULL_TURN}" scaled="0"/>`;
 
   return `<a:gradFill rotWithShape="1"><a:gsLst>${stops}</a:gsLst>${shape}</a:gradFill>`;
+}
+
+export function pattFillXml(p: Pattern): string {
+  return `<a:pattFill prst="${p.preset}">`
+    + `<a:fgClr>${clr(p.fg, p.fgTransparency)}</a:fgClr>`
+    + `<a:bgClr>${clr(p.bg, p.bgTransparency)}</a:bgClr>`
+    + '</a:pattFill>';
+}
+
+/**
+ * 이 칠을 덧써야 하는가. 덧쓸 것이 없으면 아무것도 돌려주지 않는다.
+ *
+ * 무늬는 가져올 때 눌러 둔 단색이 그대로일 때만 되돌린다 — 색을 바꿨다면 그쪽이 사용자의
+ * 최신 의사이고, 원본 무늬 색으로 되돌리면 그 편집을 뭉갠다.
+ */
+export function fillXmlOf(fill: Fill | undefined): string | undefined {
+  if (fill?.kind !== 'solid') return undefined;
+  if (fill.gradient) return gradFillXml(fill.gradient);
+  if (fill.pattern && fill.pattern.approximated.toUpperCase() === fill.color.toUpperCase()) {
+    return pattFillXml(fill.pattern);
+  }
+  return undefined;
+}
+
+export function lineXmlOf(stroke: Stroke | undefined): string | undefined {
+  return stroke?.gradient ? gradFillXml(stroke.gradient) : undefined;
 }
 
 /** 첫 `<a:solidFill>…</a:solidFill>` 을 바꾼다. 없으면 원본 그대로. */
@@ -125,11 +149,11 @@ function rewriteShape(sp: string, mark: Mark): string {
     const lnAt = head.indexOf('<a:ln');
     const beforeLn = lnAt < 0 ? head : head.slice(0, lnAt);
     const fromLn = lnAt < 0 ? '' : head.slice(lnAt);
-    head = (mark.fill ? swapFirstFill(beforeLn, gradFillXml(mark.fill)) : beforeLn)
-      + (mark.line ? swapFirstFill(fromLn, gradFillXml(mark.line)) : fromLn);
+    head = (mark.fill ? swapFirstFill(beforeLn, mark.fill) : beforeLn)
+      + (mark.line ? swapFirstFill(fromLn, mark.line) : fromLn);
   }
 
-  return head + (mark.text && body ? swapEveryFill(body, gradFillXml(mark.text)) : body);
+  return head + (mark.text && body ? swapEveryFill(body, mark.text) : body);
 }
 
 /** 부품 하나에 그 부품 몫의 표식을 전부 덧쓰고, 남은 꼬리표를 지운다. */

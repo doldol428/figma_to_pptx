@@ -8,7 +8,7 @@
  */
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
-import type { Box, Doc, Gradient, TextItem } from '../src/shared/ir';
+import type { Box, Doc, Gradient, Pattern, TextItem } from '../src/shared/ir';
 import { fitsInMaster } from '../src/shared/ir';
 import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
@@ -19,6 +19,7 @@ import { linePlacement } from '../src/import/transform';
 import { presetPath } from '../src/import/preset';
 import { pathBounds } from '../src/import/pathbox';
 import { readFill } from '../src/import/color';
+import { blipRelId } from '../src/import/reader';
 import { deep as deepXml, parseXml } from '../src/import/xml';
 
 const EMU_PER_MM = 36000;
@@ -700,6 +701,70 @@ async function main(): Promise<void> {
     (shapeNamed('테두리만').match(/<a:gradFill/g) ?? []).length === 1);
   checkTruthy('글자 그라디언트는 txBody 안에',
     /<p:txBody>[\s\S]*<a:gradFill/.test(shapeNamed('글자')));
+
+  /* ── 무늬 채우기 왕복 ────────────────────────────────────────── */
+
+  /*
+   * 무늬는 Figma 에 없어 단색으로 눌러 두고 원본을 노드에 적어 둔다. 무늬 자체는 Figma 에서
+   * 손댈 수 없어 기록이 낡지 않지만, 색은 바꿀 수 있으니 눌러 둔 그 색일 때만 되돌린다.
+   */
+  const patt: Pattern = {
+    preset: 'ltUpDiag',
+    fg: '18539B', fgTransparency: 0,
+    bg: 'FFFFFF', bgTransparency: 0,
+    approximated: 'C5D4E6',
+  };
+  const patterns: Doc = {
+    ...doc,
+    slides: [{
+      name: '무늬',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [
+        {
+          type: 'shape', name: '그대로', box: box(10, 10, 60, 60),
+          geom: { kind: 'rect' },
+          fill: { kind: 'solid', color: 'C5D4E6', transparency: 0, pattern: patt },
+        },
+        {
+          // 사람이 색을 바꾼 도형. 원본 무늬 색으로 되돌리면 그 편집을 뭉갠다.
+          type: 'shape', name: '색을 바꾼 것', box: box(80, 10, 60, 60),
+          geom: { kind: 'rect' },
+          fill: { kind: 'solid', color: 'FF0000', transparency: 0, pattern: patt },
+        },
+      ],
+    }],
+  };
+  const pattOut = await render(patterns);
+  const pattShape = (n: string): string =>
+    shapesOf(pattOut.xml).find((s) => s.includes(`name="${n}"`)) ?? '';
+
+  console.log('\n무늬 채우기 왕복');
+  check('무늬는 하나만 되살아남', (pattOut.xml.match(/<a:pattFill/g) ?? []).length, 1);
+  checkTruthy('무늬 이름이 그대로', pattShape('그대로').includes('prst="ltUpDiag"'));
+  checkTruthy('앞색·뒷색이 그대로',
+    pattShape('그대로').includes('18539B') && pattShape('그대로').includes('FFFFFF'));
+  checkTruthy('색을 바꿨으면 그 색을 지킴',
+    pattShape('색을 바꾼 것').includes('FF0000')
+    && !pattShape('색을 바꾼 것').includes('<a:pattFill'));
+
+  /* ── SVG 아이콘의 관계 id ────────────────────────────────────── */
+
+  /*
+   * 벡터 아이콘은 `<a:blip>` 에 id 를 달지 않고 확장 영역의 `<asvg:svgBlip>` 에만 단다.
+   * 여기를 안 보면 그림이 통째로 사라진다 — 실측 덱에서 54개가 그렇게 없어졌다.
+   */
+  console.log('\nSVG 아이콘 관계 id');
+  const svgOnly = parseXml(
+    '<a:blip xmlns:a="x"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}">'
+    + '<asvg:svgBlip xmlns:asvg="y" r:embed="rId7"/></a:ext></a:extLst></a:blip>',
+  ).children[0];
+  check('폴백 없는 SVG 도 찾아냄', blipRelId(svgOnly), 'rId7');
+  const withFallback = parseXml(
+    '<a:blip xmlns:a="x" r:embed="rId2"><a:extLst><a:ext uri="{96DAC541}">'
+    + '<asvg:svgBlip xmlns:asvg="y" r:embed="rId3"/></a:ext></a:extLst></a:blip>',
+  ).children[0];
+  check('폴백이 있으면 폴백을 씀', blipRelId(withFallback), 'rId2');
+  check('둘 다 없으면 없음', blipRelId(parseXml('<a:blip/>').children[0]), undefined);
 
   /* ── PowerPoint 가 복구를 요구하는 값들 ──────────────────────── */
 

@@ -1,4 +1,4 @@
-﻿import type { Hex, Warning } from './ir';
+﻿import type { Hex, Pattern, Warning } from './ir';
 
 /**
  * 가져오기(PPTX → Figma) 중간 표현.
@@ -16,6 +16,11 @@ export interface SolidPaint {
   color: Hex;
   /** 0.0 - 1.0 */
   opacity: number;
+  /**
+   * 이 단색이 무늬(`pattFill`)를 뭉갠 값이면 원본이 여기 남는다.
+   * Figma 에 무늬가 없어 단색으로 눌러 두지만, 노드에 적어 두면 내보낼 때 되살릴 수 있다.
+   */
+  pattern?: Pattern;
 }
 
 export interface GradientStop {

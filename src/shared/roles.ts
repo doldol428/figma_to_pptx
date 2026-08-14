@@ -75,4 +75,12 @@ export const KEY = {
   pptxName: 'pptxName',
   /** 슬라이드 번호 (1부터) */
   slide: 'slide',
+  /**
+   * 무늬 채우기 원본 (ir.Pattern 의 JSON).
+   *
+   * Figma 에 무늬가 없어 단색으로 눌러 두는데, 그 사실을 여기 말고는 적어 둘 곳이 없다.
+   * 무늬는 Figma 에서 편집할 방법 자체가 없으므로 이 기록이 낡지 않는다 — 확인 없이
+   * 되돌려도 안전한 드문 경우다. 다만 색은 바꿀 수 있어 내보낼 때 단색이 그대로인지만 본다.
+   */
+  pattern: 'pattern',
 } as const;

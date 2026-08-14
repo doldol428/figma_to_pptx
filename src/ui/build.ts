@@ -5,7 +5,7 @@ import type {
   Slide as SlideSpec, Stroke, TextItem,
 } from '../shared/ir';
 import { ptToIn } from '../shared/units';
-import { Marker, hookSlideXml } from './gradient';
+import { Marker, fillXmlOf, gradFillXml, hookSlideXml, lineXmlOf } from './fillxml';
 
 /**
  * IR → PPTX.
@@ -311,15 +311,15 @@ function addShape(slide: Slide, item: ShapeItem, s: Scale, marker: Marker, part:
 
 /**
  * 이름 뒤에 덧쓰기 표식을 붙인다.
- * PptxGenJS 가 그리지 못하는 그라디언트를 나중에 이 이름으로 찾아 XML 에 끼워 넣는다.
+ * PptxGenJS 가 그리지 못하는 그라디언트·무늬를 나중에 이 이름으로 찾아 XML 에 끼워 넣는다.
  */
-function named(name: string, marker: Marker, part: string, grads: {
+function named(name: string, marker: Marker, part: string, paints: {
   fill?: Fill; line?: Stroke; text?: Gradient;
 }): string {
   const tag = marker.claim(part, {
-    fill: grads.fill?.kind === 'solid' ? grads.fill.gradient : undefined,
-    line: grads.line?.gradient,
-    text: grads.text,
+    fill: fillXmlOf(paints.fill),
+    line: lineXmlOf(paints.line),
+    text: paints.text ? gradFillXml(paints.text) : undefined,
   });
   return tag ? `${name} ${tag}` : name;
 }

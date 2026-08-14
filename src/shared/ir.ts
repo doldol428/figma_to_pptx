@@ -43,6 +43,24 @@ export interface Gradient {
   stops: GradientStop[];
 }
 
+/**
+ * 무늬 채우기 — Figma 에 대응 개념이 **없다**.
+ *
+ * 가져올 때 밀도만큼 섞은 단색으로 눌러 두고, 원본은 노드에 적어 둔다. Figma 에서 무늬를
+ * 편집할 방법 자체가 없으므로 그 값이 낡을 일이 없다 — 확인 없이 되돌려도 안전한 드문 경우다.
+ * 다만 **색은 바꿀 수 있으니**, 눌러 둔 단색이 그대로일 때만 되돌린다.
+ */
+export interface Pattern {
+  /** DrawingML 무늬 이름 (`ltUpDiag`, `pct25` …) */
+  preset: string;
+  fg: Hex;
+  fgTransparency: number;
+  bg: Hex;
+  bgTransparency: number;
+  /** 가져올 때 눌러 둔 단색. 지금 색이 이것과 다르면 사람이 손댄 것이라 되돌리지 않는다. */
+  approximated: Hex;
+}
+
 export interface SolidFill {
   kind: 'solid';
   color: Hex;
@@ -50,6 +68,8 @@ export interface SolidFill {
   transparency: number;
   /** 이 단색이 그라디언트의 평균값이면 원본이 여기 남는다 */
   gradient?: Gradient;
+  /** 이 단색이 무늬를 뭉갠 값이면 원본이 여기 남는다 */
+  pattern?: Pattern;
 }
 
 export interface NoFill {

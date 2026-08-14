@@ -592,6 +592,13 @@ function createShape(spec: ShapeNode): SceneNode {
 
   node.name = spec.name;
   node.fills = spec.fill ? [toFigmaPaint(spec.fill) as Paint2] : [];
+  /*
+   * 무늬는 Figma 에 없어 단색으로 눌러 뒀다. 원본을 적어 두지 않으면 되돌릴 길이 없다 —
+   * 눌러 둔 색만 남아 내보낼 때도 그대로 단색으로 나간다.
+   */
+  if (spec.fill?.kind === 'solid' && spec.fill.pattern) {
+    node.setPluginData(KEY.pattern, JSON.stringify(spec.fill.pattern));
+  }
   // 선이 없으면 명시적으로 비운다. createVector() 로 만든 노드는 기본 선을 달고 나온다.
   if (spec.stroke) applyStroke(node, spec.stroke);
   else node.strokes = [];

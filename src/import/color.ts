@@ -260,6 +260,9 @@ const PATTERN_DENSITY: Record<string, number> = {
  *
  * 그래서 앞색과 뒷색을 무늬 밀도만큼 섞은 **단색으로 근사**한다. 무늬 자체는 잃지만
  * 도형과 색조는 남는다 — 아예 사라지는 것보다 낫고, 남아 있어야 사람이 고칠 수 있다.
+ *
+ * 원본은 `pattern` 에 실어 노드에 적어 둔다. Figma 에서 무늬를 편집할 방법이 없으므로
+ * 그 값이 낡을 일이 없고, 내보낼 때 그대로 되돌려 준다.
  */
 function readPattern(patt: XNode, ctx: ColorContext): Paint | null {
   const fg = resolveColorNode(colorNode(one(patt, 'fgClr')), ctx);
@@ -276,11 +279,25 @@ function readPattern(patt: XNode, ctx: ColorContext): Paint | null {
   const mix = (a: number, b: number): number => b + (a - b) * density;
   const f = rgbOf(fg.color);
   const b = rgbOf(bg.color);
+  const color = hexOf({ r: mix(f.r, b.r), g: mix(f.g, b.g), b: mix(f.b, b.b) });
   return {
     kind: 'solid',
-    color: hexOf({ r: mix(f.r, b.r), g: mix(f.g, b.g), b: mix(f.b, b.b) }),
+    color,
     opacity: bg.opacity + (fg.opacity - bg.opacity) * density,
+    pattern: {
+      preset: prst,
+      fg: fg.color,
+      fgTransparency: opacityToTransparency(fg.opacity),
+      bg: bg.color,
+      bgTransparency: opacityToTransparency(bg.opacity),
+      approximated: color,
+    },
   };
+}
+
+/** 0..1 불투명도 → 0..100 투명도. 내보내기 IR 이 쓰는 표기에 맞춘다. */
+function opacityToTransparency(opacity: number): number {
+  return Math.round((1 - clamp01(opacity)) * 100 * 10) / 10;
 }
 
 /** `"A9B2BB"` → 0..1 성분 */

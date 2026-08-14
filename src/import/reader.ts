@@ -727,6 +727,19 @@ const MIME: Record<string, string> = {
   svg: 'image/svg+xml', bmp: 'image/bmp', tiff: 'image/tiff',
 };
 
+/**
+ * `<a:blip>` 이 가리키는 그림 파일의 관계 id.
+ *
+ * 벡터 아이콘은 `<a:blip>` 자체에 id 를 달지 않고 확장 영역의 `<asvg:svgBlip>` 에만 단다.
+ * PowerPoint 는 보통 폴백 PNG 를 함께 넣지만 그러지 않은 것도 있다 — 실측 덱에 54개였고,
+ * 확장 영역을 안 보면 그림이 통째로 사라진다 (슬라이드 33 한 장에서만 20개).
+ */
+export function blipRelId(blip: XNode | null): string | undefined {
+  const svg = deep(blip, 'svgBlip');
+  return blip?.attrs['r:embed'] ?? blip?.attrs['r:link']
+    ?? svg?.attrs['r:embed'] ?? svg?.attrs['r:link'];
+}
+
 async function readPicture(
   el: XNode, parent: Mat, ctx: Ctx, rels: Record<string, string>,
 ): Promise<ImportNode | null> {
@@ -737,8 +750,7 @@ async function readPicture(
   const name = xpath(el, 'nvPicPr', 'cNvPr')?.attrs.name ?? '그림';
   const place = placementOf(parent, local);
 
-  const blip = deep(one(el, 'blipFill'), 'blip');
-  const id = blip?.attrs['r:embed'] ?? blip?.attrs['r:link'];
+  const id = blipRelId(deep(one(el, 'blipFill'), 'blip'));
   const target = id ? rels[id] : undefined;
   if (!target) return null;
 
