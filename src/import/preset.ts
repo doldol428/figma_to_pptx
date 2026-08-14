@@ -48,6 +48,30 @@ const C = (
 ): string => `C${p(x1)} ${p(y1)} ${p(x2)} ${p(y2)} ${p(x)} ${p(y)} `;
 const Z = 'Z ';
 
+/** OOXML 각도 단위 — 1/60000도. 한 바퀴가 21600000. */
+const FULL_TURN = 21600000;
+
+/**
+ * 호의 시작 각과 끝 각 (라디안).
+ *
+ * 파일에는 시작 각(adj1)과 끝 각(adj2)이 들어 있는데, 끝이 시작보다 작으면 **한 바퀴를 더해**
+ * 시계 방향으로 돈다. preset 정의의 `<gd name="swAng" fmla="?: sw11 sw11 sw12"/>` 가 그것이다.
+ * 이 정규화를 빼면 sweep 이 음수가 되어 호가 반대 방향, 반대 크기로 그려진다.
+ *
+ * 기본값도 preset 마다 다르다. `arc` 는 270°→0°, 즉 정규화를 거치면 **90°짜리 모서리**다.
+ * 이 값을 pie 의 것(0°→270°)으로 잘못 쓰고 정규화도 없으면, 비어 있는 `<a:avLst/>` 를 가진
+ * 원호가 90° 대신 270° 소용돌이가 된다 — 가로 브라켓의 양 끝이 그렇게 말려 있었다.
+ */
+function angles(
+  adj: Record<string, number>, defStart: number, defEnd: number,
+): { start: number; end: number } {
+  const start = adj.adj1 ?? defStart;
+  let sweep = (adj.adj2 ?? defEnd) - start;
+  if (sweep < 0) sweep += FULL_TURN;
+  const rad = (v: number): number => (v / 60000) * (Math.PI / 180);
+  return { start: rad(start), end: rad(start + sweep) };
+}
+
 /** 타원 호를 3차 베지어로. 각도는 라디안, y 아래 방향 기준. */
 function arc(
   cx: number, cy: number, rx: number, ry: number, from: number, to: number, move: boolean,
@@ -307,16 +331,17 @@ export function presetPath(
     case 'pie':
     case 'arc':
     case 'chord': {
-      const start = (adj.adj1 ?? 0) / 60000 * (Math.PI / 180);
-      const end = (adj.adj2 ?? 16200000) / 60000 * (Math.PI / 180);
+      // 기본값은 preset 마다 다르다. arc 는 270°에서 시작해 0°에서 끝나는 **90° 모서리**다.
+      const { start, end } = prst === 'arc' ? angles(adj, 16200000, 0)
+        : prst === 'chord' ? angles(adj, 2700000, 16200000)
+          : angles(adj, 0, 16200000);
       const sweep = arc(w / 2, h / 2, w / 2, h / 2, start, end, true);
       if (prst === 'arc') return { data: sweep, evenOdd: false };
       if (prst === 'chord') return solid(sweep + Z);
       return solid(sweep + L(w / 2, h / 2) + Z);
     }
     case 'blockArc': {
-      const start = (adj.adj1 ?? 10800000) / 60000 * (Math.PI / 180);
-      const end = (adj.adj2 ?? 0) / 60000 * (Math.PI / 180);
+      const { start, end } = angles(adj, 10800000, 0);
       const t = mn * a('adj3', 25000);
       return solid(arc(w / 2, h / 2, w / 2, h / 2, start, end, true)
         + arc(w / 2, h / 2, w / 2 - t, h / 2 - t, end, start, false) + Z);

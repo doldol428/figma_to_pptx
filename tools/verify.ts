@@ -15,6 +15,7 @@ import { exportScaleForDpi } from '../src/shared/units';
 import { composePptx } from '../src/ui/build';
 import { aliasesFor, pickFont } from '../src/main/fontalias';
 import { linePlacement } from '../src/import/transform';
+import { presetPath } from '../src/import/preset';
 
 const EMU_PER_MM = 36000;
 const PT_PER_MM = 72 / 25.4;
@@ -466,6 +467,34 @@ async function main(): Promise<void> {
     const [x1, y1, x2, y2] = endpoints(box);
     check(name, `${r2(x1)},${r2(y1)} → ${r2(x2)},${r2(y2)}`, want);
   }
+
+  /* ── 호(arc) 각도 ────────────────────────────────────────────── */
+
+  /*
+   * 시작점·끝점·베지어 조각 수로 확인한다. 각도 값만 보면 방향이 뒤집힌 것을 못 잡는다.
+   * 90° 는 조각 1개, 180° 는 2개, 270° 는 3개다 (arc() 가 사분면마다 나눈다).
+   */
+  const arcShape = (prst: string, adj: Record<string, number>): string => {
+    const path = presetPath(prst, 13, 13, adj)?.data ?? '';
+    const nums = path.match(/-?\d+(\.\d+)?/g) ?? [];
+    const segs = (path.match(/C/g) ?? []).length;
+    const start = `${nums[0]},${nums[1]}`;
+    const end = `${nums[nums.length - 2]},${nums[nums.length - 1]}`;
+    return `${start} → ${end} (${segs}조각)`;
+  };
+
+  console.log('\n호 각도 — 시작점 → 끝점');
+  // 실측 파일 슬라이드 2 의 브라켓 모서리: <a:avLst/> 라 기본값이 쓰인다.
+  // 12시(6.5,0) 에서 3시(13,6.5) 로 가는 90° 모서리여야 한다 — 270° 소용돌이가 아니라.
+  check('arc 기본값 (빈 avLst)', arcShape('arc', {}), '6.5,0 → 13,6.5 (1조각)');
+  // 슬라이드 3 의 원호: 180.98° 에서 시작해 끝각이 0 이므로 한 바퀴를 더해 179.02° 를 쓸어간다
+  check('arc 끝각 < 시작각', arcShape('arc', { adj1: 10858817, adj2: 0 }), '0,6.39 → 13,6.5 (2조각)');
+  // 슬라이드 9~13 의 원호: 185.53° → 354.31° 로 끝각이 더 커서 정규화가 필요 없다 (예전에도 맞던 쪽)
+  check('arc 끝각 > 시작각', arcShape('arc', { adj1: 11131912, adj2: 21258779 }), '0.03,5.87 → 12.97,5.86 (2조각)');
+  // pie 는 0°→270° 라 정규화가 걸리지 않는다. 마지막 점은 중심으로 닫는 선이다.
+  check('pie 기본값', arcShape('pie', {}), '13,6.5 → 6.5,6.5 (3조각)');
+  // blockArc 는 180°→0° — 바깥 호 180°(2조각) + 안쪽 되돌아오는 호 180°(2조각)
+  check('blockArc 기본값', arcShape('blockArc', {}), '0,6.5 → 3.25,6.5 (4조각)');
 
   if (failures.length > 0) {
     console.error(`\n실패 ${failures.length}건: ${failures.join(', ')}`);
