@@ -8,7 +8,7 @@
  */
 import { writeFile } from 'node:fs/promises';
 import JSZip from 'jszip';
-import type { Box, Doc, Gradient, Pattern, TextItem } from '../src/shared/ir';
+import type { Box, Doc, Gradient, Pattern, TableCellItem, TextItem } from '../src/shared/ir';
 import { fitsInMaster } from '../src/shared/ir';
 import { resolveLocale, setLocale } from '../src/shared/i18n';
 import { resolveSlide } from '../src/shared/slidesize';
@@ -773,6 +773,57 @@ async function main(): Promise<void> {
   checkTruthy('색을 바꿨으면 그 색을 지킴',
     pattShape('색을 바꾼 것').includes('FF0000')
     && !pattShape('색을 바꾼 것').includes('<a:pattFill'));
+
+  /* ── 표 ──────────────────────────────────────────────────────── */
+
+  /*
+   * Figma 에는 표가 없어 프레임 격자로 만들지만, 나갈 때는 진짜 <a:tbl> 이어야 한다.
+   * 도형과 선으로 풀면 모양은 남아도 파워포인트에서 행을 넣거나 열 너비를 끌 수 없다.
+   */
+  const line = (color: string, width: number) =>
+    ({ color, transparency: 0, width, dashType: 'solid' as const });
+  const cell = (text: string, extra: Partial<TableCellItem> = {}): TableCellItem => ({
+    runs: [{
+      text, fontFace: 'Arial', fontSize: 10, bold: false,
+      italic: false, underline: false, strike: false, color: '222222', transparency: 0,
+    }],
+    align: 'left', valign: 'middle',
+    fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+    borders: { top: line('888888', 0.5), bottom: line('888888', 0.5) },
+    colSpan: 1, rowSpan: 1, merged: false,
+    ...extra,
+  });
+  const tableDoc: Doc = {
+    ...doc,
+    slides: [{
+      name: '표',
+      fill: { kind: 'solid', color: 'FFFFFF', transparency: 0 },
+      items: [{
+        type: 'table', name: '표 1', box: box(20, 20, 300, 60),
+        colWidths: [100, 100, 100],
+        rowHeights: [30, 30],
+        rows: [
+          // 첫 칸이 두 칸을 잡아먹는다. 가려진 칸은 자리를 만들면 안 된다.
+          [cell('머리글', { colSpan: 2, fill: { kind: 'solid', color: 'E3F2FD', transparency: 0 } }),
+            cell('', { merged: true }), cell('셋')],
+          [cell('하나'), cell('둘'), cell('셋')],
+        ],
+      }],
+    }],
+  };
+  const tableOut = await render(tableDoc);
+
+  console.log('\n표');
+  check('진짜 표로 나감', (tableOut.xml.match(/<a:tbl>/g) ?? []).length, 1);
+  check('행 2개', (tableOut.xml.match(/<a:tr /g) ?? []).length, 2);
+  checkTruthy('열 너비가 실려 나감', (tableOut.xml.match(/<a:gridCol/g) ?? []).length === 3);
+  checkTruthy('병합이 살아 있음', tableOut.xml.includes('gridSpan="2"'));
+  check('칸은 행마다 3개 (가려진 칸 포함)',
+    (tableOut.xml.match(/<a:tc[ >]/g) ?? []).length, 6);
+  checkTruthy('칸 색이 살아 있음', tableOut.xml.includes('E3F2FD'));
+  checkTruthy('테두리가 살아 있음', tableOut.xml.includes('888888'));
+  checkTruthy('글자가 칸 안에 있음', /<a:tc[ >][\s\S]*?머리글/.test(tableOut.xml));
+  checkTruthy('도형으로 풀리지 않음', !tableOut.xml.includes('<p:sp>'));
 
   /* ── SVG 아이콘의 관계 id ────────────────────────────────────── */
 

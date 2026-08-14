@@ -200,7 +200,36 @@ export interface ImageItem {
   shadow?: Shadow;
 }
 
-export type Item = ShapeItem | TextItem | ImageItem;
+export interface TableCellItem {
+  runs: Run[];
+  align: TextItem['align'];
+  valign: TextItem['valign'];
+  fill: Fill;
+  borders: { top?: Stroke; right?: Stroke; bottom?: Stroke; left?: Stroke };
+  /** 1 이면 병합 없음 */
+  colSpan: number;
+  rowSpan: number;
+  /** 병합에 가려진 칸 — 내보낼 때 건너뛴다 */
+  merged: boolean;
+}
+
+/**
+ * 표.
+ *
+ * Figma 에는 표 원시 타입이 없어 프레임 격자로 만들지만, 나갈 때는 진짜 `<a:tbl>` 이어야 한다.
+ * 도형과 선으로 풀어 내면 모양은 남아도 파워포인트에서 행을 넣거나 열 너비를 바꿀 수 없다.
+ */
+export interface TableItem {
+  type: 'table';
+  name: string;
+  box: Box;
+  /** px */
+  colWidths: number[];
+  rowHeights: number[];
+  rows: TableCellItem[][];
+}
+
+export type Item = ShapeItem | TextItem | ImageItem | TableItem;
 
 export interface Slide {
   name: string;
@@ -236,6 +265,7 @@ export interface Master {
  * 도형·이미지·단일 서식 텍스트는 전부 나간다 (custGeom 포함).
  */
 export function fitsInMaster(item: Item): boolean {
+  if (item.type === 'table') return false;
   return item.type !== 'text' || item.runs.length <= 1;
 }
 

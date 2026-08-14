@@ -2,7 +2,7 @@ import PptxGenJS from 'pptxgenjs';
 // IR 의 Slide 와 PptxGenJS 의 Slide 가 이름이 겹친다. 이쪽은 "만들 내용"이라 SlideSpec 으로 받는다.
 import type {
   Box, Doc, DocMeta, Fill, Geom, ImageItem, PathPoint, Run, ShapeItem,
-  Slide as SlideSpec, Stroke, TextItem,
+  Slide as SlideSpec, Stroke, TableCellItem, TableItem, TextItem,
 } from '../shared/ir';
 import { ptToIn } from '../shared/units';
 import { Marker, fillXmlOf, gradFillXml, hookSlideXml, lineXmlOf } from './fillxml';
@@ -154,8 +154,10 @@ function definePresentation(pptx: PptxGenJS, doc: DocMeta, scale: Scale, marker:
     const part = layoutPart(i + 1);
     pptx.defineSlideMaster({
       title: master.name,
+      // 표는 공통 서식에 들어가지 않는다 (fitsInMaster 가 걸러 슬라이드에 남긴다).
       objects: doc.masters.length > 0
-        ? master.items.map((item) => masterObject(item, scale, marker, part))
+        ? master.items.filter((i) => i.type !== 'table')
+          .map((item) => masterObject(item, scale, marker, part))
         : undefined,
       slideNumber: master.slideNumber
         ? {
@@ -196,6 +198,7 @@ function addSlideTo(
   for (const item of slide.items) {
     if (item.type === 'shape') addShape(s, item, scale, marker, part);
     else if (item.type === 'text') addText(s, item, scale, marker, part);
+    else if (item.type === 'table') addTable(s, item, scale);
     else {
       addImage(s, item, scale);
       if (item.key) reuseByKey(s, item.key, byKey);
@@ -433,28 +436,31 @@ function addText(slide: Slide, item: TextItem, s: Scale, marker: Marker, part: s
   slide.addText(runs, opts);
 }
 
+/** 런 하나. 텍스트 상자와 표 칸이 같은 규칙을 타야 해서 따로 뺐다. */
+function runSpec(r: Run, align: TextItem['align'], s: Scale): PptxGenJS.TextProps {
+  const options: PptxGenJS.TextPropsOptions = {
+    fontFace: r.fontFace,
+    fontSize: s.pt(r.fontSize),
+    bold: r.bold,
+    italic: r.italic,
+    color: r.color,
+    align,
+  };
+  if (r.transparency > 0) options.transparency = r.transparency;
+  if (r.underline) options.underline = { style: 'sng' };
+  if (r.strike) options.strike = 'sngStrike';
+  if (r.charSpacing !== undefined) options.charSpacing = s.pt(r.charSpacing);
+  if (r.lineSpacing !== undefined) options.lineSpacing = s.pt(r.lineSpacing);
+  if (r.breakLine) options.breakLine = true;
+  if (r.hyperlink) options.hyperlink = { url: r.hyperlink };
+  return { text: r.text, options };
+}
+
 /** 텍스트 하나의 PptxGenJS 인자. 슬라이드와 공통 서식이 같은 값을 쓴다. */
 function textSpec(
   item: TextItem, s: Scale, marker: Marker, part: string,
 ): { runs: PptxGenJS.TextProps[]; opts: PptxGenJS.TextPropsOptions } {
-  const runs: PptxGenJS.TextProps[] = item.runs.map((r) => {
-    const options: PptxGenJS.TextPropsOptions = {
-      fontFace: r.fontFace,
-      fontSize: s.pt(r.fontSize),
-      bold: r.bold,
-      italic: r.italic,
-      color: r.color,
-      align: item.align,
-    };
-    if (r.transparency > 0) options.transparency = r.transparency;
-    if (r.underline) options.underline = { style: 'sng' };
-    if (r.strike) options.strike = 'sngStrike';
-    if (r.charSpacing !== undefined) options.charSpacing = s.pt(r.charSpacing);
-    if (r.lineSpacing !== undefined) options.lineSpacing = s.pt(r.lineSpacing);
-    if (r.breakLine) options.breakLine = true;
-    if (r.hyperlink) options.hyperlink = { url: r.hyperlink };
-    return { text: r.text, options };
-  });
+  const runs = item.runs.map((r) => runSpec(r, item.align, s));
 
   const opts: PptxGenJS.TextPropsOptions = {
     ...position(item.box, s),
@@ -495,6 +501,58 @@ function textSpec(
   if (item.shadow) opts.shadow = shadowOf(item.shadow, s);
 
   return { runs, opts };
+}
+
+/**
+ * 표 하나.
+ *
+ * PptxGenJS 는 `<a:tbl>` 을 제대로 쓴다 — 병합·변별 테두리·칸 색까지. 격자를 도형으로 풀지
+ * 않고 이 길로 내보내야 파워포인트에서 행을 넣거나 열 너비를 끌 수 있다.
+ */
+function addTable(slide: Slide, item: TableItem, s: Scale): void {
+  const rows: PptxGenJS.TableRow[] = [];
+  for (const row of item.rows) {
+    const cells: PptxGenJS.TableCell[] = [];
+    for (const cell of row) {
+      // 병합에 가려진 칸은 자리를 만들지 않는다. 넣으면 열이 밀린다.
+      if (cell.merged) continue;
+      const opts: PptxGenJS.TableCellProps = {
+        align: cell.align,
+        valign: cell.valign === 'middle' ? 'middle' : cell.valign,
+        border: borderOf(cell.borders, s),
+        // Figma 칸에는 내부 여백이 없다. 기본 여백을 지우지 않으면 글자가 전부 밀린다.
+        margin: 0,
+      };
+      if (cell.fill.kind === 'solid') {
+        opts.fill = { color: cell.fill.color, transparency: cell.fill.transparency };
+      }
+      if (cell.colSpan > 1) opts.colspan = cell.colSpan;
+      if (cell.rowSpan > 1) opts.rowspan = cell.rowSpan;
+      cells.push({ text: cell.runs.map((r) => runSpec(r, cell.align, s)), options: opts });
+    }
+    rows.push(cells);
+  }
+
+  const pos = position(item.box, s);
+  slide.addTable(rows, {
+    ...pos,
+    objectName: item.name,
+    colW: item.colWidths.map((w) => safeIn(s.len(w))),
+    rowH: item.rowHeights.map((h) => safeIn(s.len(h))),
+    // 표가 슬라이드를 넘으면 PptxGenJS 가 장을 쪼갠다 — 우리는 이미 자리가 정해져 있다.
+    autoPage: false,
+  });
+}
+
+/** 네 변의 테두리. 없는 변은 `none` 이어야 PowerPoint 가 기본 격자를 그리지 않는다. */
+function borderOf(
+  borders: TableCellItem['borders'], s: Scale,
+): [PptxGenJS.BorderProps, PptxGenJS.BorderProps, PptxGenJS.BorderProps, PptxGenJS.BorderProps] {
+  const one = (stroke: Stroke | undefined): PptxGenJS.BorderProps => (stroke
+    ? { type: stroke.dashType === 'solid' || !stroke.dashType ? 'solid' : 'dash',
+      pt: s.pt(stroke.width), color: stroke.color }
+    : { type: 'none' });
+  return [one(borders.top), one(borders.right), one(borders.bottom), one(borders.left)];
 }
 
 function addImage(slide: Slide, item: ImageItem, s: Scale): void {

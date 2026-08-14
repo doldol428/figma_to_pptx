@@ -805,7 +805,16 @@ async function createText(spec: TextNodeSpec, fonts: FontBook): Promise<SceneNod
  */
 async function createTable(spec: TableNodeSpec, fonts: FontBook): Promise<SceneNode> {
   const table = figma.createFrame();
-  table.name = spec.name;
+  table.name = `${NAME.table}/${spec.name}`;
+  table.setPluginData(KEY.role, 'table');
+  table.setPluginData(KEY.pptxName, spec.name);
+  /*
+   * 병합만 따로 적어 둔다. 칸 크기·색·글자·테두리는 노드에서 그대로 읽히지만 병합은
+   * 프레임 격자에 남지 않고, Figma 에서 칸을 병합할 방법도 없어 이 기록이 낡지 않는다.
+   */
+  table.setPluginData(KEY.table, JSON.stringify({
+    spans: spec.rows.map((row) => row.map((c) => [c.colSpan, c.rowSpan, c.merged ? 1 : 0])),
+  }));
   table.fills = [];
   table.clipsContent = false;
   table.layoutMode = 'VERTICAL';

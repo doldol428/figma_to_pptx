@@ -33,6 +33,13 @@ export type Role =
    * 텍스트 상자가 된다 (실측: 테두리 있는 상자 8개가 16개로).
    */
   | 'shapeText'
+  /**
+   * 표.
+   *
+   * Figma 에는 표 원시 타입이 없어 프레임 격자로 재구성한다. 표시가 없으면 내보낼 때
+   * 그 격자가 도형과 선 수백 개로 풀려, 파워포인트에서 행을 넣거나 열 너비를 바꿀 수 없게 된다.
+   */
+  | 'table'
   /** 그 슬라이드 고유 내용 */
   | 'content';
 
@@ -42,6 +49,8 @@ export const NAME = {
   slideNumber: `${MARK}슬라이드번호`,
   /** 도형+글자 그룹. 원래 이름을 뒤에 붙여 `#도형글자/직사각형 5` 처럼 쓴다. */
   shapeText: `${MARK}도형글자`,
+  /** 표 격자. `#표/표 1` 처럼 쓴다. */
+  table: `${MARK}표`,
 } as const;
 
 export function layoutName(name: string): string {
@@ -53,6 +62,7 @@ export function roleFromName(name: string): Role | null {
   if (name === NAME.slideNumber) return 'slideNumber';
   if (name === NAME.layout || name.indexOf(`${NAME.layout}/`) === 0) return 'layout';
   if (name === NAME.shapeText || name.indexOf(`${NAME.shapeText}/`) === 0) return 'shapeText';
+  if (name === NAME.table || name.indexOf(`${NAME.table}/`) === 0) return 'table';
   return null;
 }
 
@@ -83,4 +93,11 @@ export const KEY = {
    * 되돌려도 안전한 드문 경우다. 다만 색은 바꿀 수 있어 내보낼 때 단색이 그대로인지만 본다.
    */
   pattern: 'pattern',
+  /**
+   * 표의 칸 병합 (JSON: `{ spans: [[[colSpan, rowSpan, merged]]] }`).
+   *
+   * 칸 크기와 색·글자·테두리는 노드에서 그대로 읽으면 되지만, 병합은 프레임 격자에 남지
+   * 않는다. Figma 에서 칸을 병합할 방법 자체가 없으니 이 기록이 낡을 일도 없다.
+   */
+  table: 'table',
 } as const;
