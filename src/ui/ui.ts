@@ -1,6 +1,7 @@
 ﻿import { parseSlideRange, readPptx } from '../import/reader';
 import type { ImportDoc } from '../shared/importir';
 import { resolveLocale, setLocale, t } from '../shared/i18n';
+import { UI_MAX_HEIGHT } from '../shared/ir';
 import type { MainToUi, SelectionState, UiToMain, Warning } from '../shared/ir';
 import { ptToMm } from '../shared/units';
 import { buildPptx } from './build';
@@ -299,6 +300,16 @@ let lastHeight = -1;
 
 function syncHeight(): void {
   const height = contentHeight();
+
+  /*
+   * 창 크기는 main 을 거쳐 비동기로 바뀐다. 그래서 탭을 옮기면 새 내용이 먼저 그려지고
+   * 창은 한 박자 뒤에 따라오는데, 그 틈에 내용이 창보다 크면 스크롤바가 번쩍였다.
+   *
+   * 창은 어차피 내용 높이에 맞춰지므로 상한 아래에서는 스크롤이 필요 없다.
+   * 상한을 넘을 때만 열어 둔다 — 그때는 진짜로 스크롤해야 한다.
+   */
+  document.documentElement.style.overflowY = height > UI_MAX_HEIGHT ? 'auto' : 'hidden';
+
   // 같은 값을 반복해서 보내지 않는다. ResizeObserver 와 명시 호출이 겹칠 수 있다.
   if (Math.abs(height - lastHeight) < 0.5) return;
   lastHeight = height;

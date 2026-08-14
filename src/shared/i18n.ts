@@ -103,7 +103,7 @@ const KO: Strings = {
   exportButton: 'PPTX 내보내기',
   building: '만드는 중…',
 
-  tabExport: 'PPTX 로 내보내기',
+  tabExport: 'PPTX 내보내기',
   tabImport: 'PPTX 가져오기',
   pickFile: 'PPTX 파일 선택',
   reading: (done, total) => `읽는 중… ${done}/${total}`,
@@ -177,7 +177,7 @@ const EN: Strings = {
   exportButton: 'Export PPTX',
   building: 'Building…',
 
-  tabExport: 'Export to PPTX',
+  tabExport: 'Export PPTX',
   tabImport: 'Import PPTX',
   pickFile: 'Choose a PPTX file',
   reading: (done, total) => `Reading… ${done}/${total}`,

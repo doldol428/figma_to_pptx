@@ -1,4 +1,5 @@
 ﻿import { setLocale, t } from '../shared/i18n';
+import { UI_MAX_HEIGHT } from '../shared/ir';
 import type { MainToUi, UiToMain } from '../shared/ir';
 import { resolveSlide } from '../shared/slidesize';
 import { ImportSession } from './create';
@@ -42,7 +43,7 @@ const handle = async (msg: UiToMain): Promise<void> => {
   }
 
   if (msg.type === 'resize') {
-    figma.ui.resize(UI_WIDTH, Math.max(140, Math.min(720, Math.ceil(msg.height))));
+    figma.ui.resize(UI_WIDTH, Math.max(140, Math.min(UI_MAX_HEIGHT, Math.ceil(msg.height))));
     return;
   }
 

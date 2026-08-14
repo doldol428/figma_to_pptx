@@ -199,6 +199,13 @@ export interface Doc {
 
 /* ── main ↔ ui 메시지 ─────────────────────────────────────────── */
 
+/**
+ * 플러그인 창 높이 상한.
+ * UI 는 이 값을 넘을 때만 스크롤을 허용한다 — 그 아래에서는 창이 내용에 맞춰지므로
+ * 스크롤바가 필요 없다. main 의 resize 와 UI 의 판단이 어긋나면 안 되므로 한 곳에 둔다.
+ */
+export const UI_MAX_HEIGHT = 720;
+
 export interface SelectionState {
   /** export 가능 여부 — 프레임이 1개 이상이고 크기가 전부 같을 때만 true */
   ok: boolean;
