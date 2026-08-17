@@ -840,6 +840,24 @@ async function main(): Promise<void> {
   })());
   checkTruthy('적어 둔 게 없으면 되돌리지 않는다',
     restorePreset(fakeNode(atOrigin, bounds.w, bounds.h, {}) as SceneNode) === null);
+  /*
+   * Figma 는 테두리가 있으면 노드를 선 굵기만큼 부풀린다. 노드 크기로 배수를 재면
+   * 멀쩡한 도형이 전부 대조에서 떨어진다 — 실측에서 hexagon 42개가 하나도 안 살아났다.
+   */
+  checkTruthy('노드가 선 굵기만큼 커도 되돌린다',
+    restorePreset(fakeNode(atOrigin, bounds.w + 2, bounds.h + 2))?.prst === 'hexagon');
+  // 경로가 상자 일부만 덮는 도형은 이름 상자가 되살아나야 한다 (호가 대표적)
+  checkTruthy('호는 이름 상자를 되찾는다', (() => {
+    const a = presetPath('arc', 100, 100, {})!;
+    const ab = pathBounds(a.data);
+    const got = restorePreset(({
+      width: ab.w, height: ab.h,
+      vectorPaths: [{ data: translatePath(a.data, -ab.x, -ab.y), windingRule: 'NONZERO' }],
+      getPluginData: (k: string) =>
+        (k === 'preset' ? JSON.stringify({ prst: 'arc', adj: {}, w: 100, h: 100 }) : ''),
+    }) as never as SceneNode);
+    return !!got && Math.abs(got.box.w - 100) < 0.1 && Math.abs(got.box.h - 100) < 0.1;
+  })());
 
   /* ── 표 ──────────────────────────────────────────────────────── */
 

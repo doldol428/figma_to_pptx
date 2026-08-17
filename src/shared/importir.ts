@@ -88,7 +88,12 @@ interface NodeBase {
 export type ShapeGeometry =
   | { kind: 'rect' }
   /** 모서리별 반경 (좌상, 우상, 우하, 좌하) */
-  | { kind: 'roundRect'; radii: [number, number, number, number] }
+  | {
+    kind: 'roundRect';
+    radii: [number, number, number, number];
+    /** 모서리가 제각각인 사각형은 내보낼 때 경로가 된다 — 이름을 알면 되돌릴 수 있다. */
+    preset?: { prst: string; adj: Record<string, number>; w: number; h: number };
+  }
   | { kind: 'ellipse' }
   | { kind: 'line' }
   /** SVG path — preset 도형·custGeom·연결선이 모두 여기로 온다 */

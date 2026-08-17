@@ -595,6 +595,7 @@ function createShape(spec: ShapeNode): SceneNode {
       r.topRightRadius = tr;
       r.bottomRightRadius = br;
       r.bottomLeftRadius = bl;
+      if (geom.preset) r.setPluginData(KEY.preset, JSON.stringify(geom.preset));
     }
     node = r;
   }

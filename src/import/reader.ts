@@ -625,7 +625,11 @@ function resolveGeometry(
   if (!prst) return { kind: 'rect' };
 
   const native = nativeFor(prst, place.w, place.h, adj);
-  if (native) return native;
+  if (native) {
+    // 모서리별 반경이 다른 사각형은 내보낼 때 경로가 된다. 이름을 적어 두면 되돌릴 수 있다.
+    if (native.kind === 'roundRect') return { ...native, preset: { prst, adj, w: place.w, h: place.h } };
+    return native;
+  }
 
   const preset = presetPath(prst, place.w, place.h, adj);
   if (preset) {
@@ -638,7 +642,12 @@ function resolveGeometry(
   }
 
   const conn = connectorPath(prst, place.w, place.h);
-  if (conn) return { kind: 'path', data: conn.data, evenOdd: false };
+  if (conn) {
+    return {
+      kind: 'path', data: conn.data, evenOdd: false,
+      preset: { prst, adj, w: place.w, h: place.h },
+    };
+  }
 
   ctx.warn(ctx.slideName, name, `preset 도형 ${prst} 은 아직 지원하지 않아 사각형으로 대체했습니다.`);
   return { kind: 'rect' };
