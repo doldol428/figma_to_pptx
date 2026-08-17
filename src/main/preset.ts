@@ -76,7 +76,7 @@ export function restorePreset(node: SceneNode): RestoredPreset | null {
 
   // 다시 그린 것을 지금 경로가 놓인 자리로 옮겨 놓고 견준다.
   const expected = parsePath(translatePath(drawn.data, at.x - box.x, at.y - box.y));
-  if (!samePath(expected, parsePath(actualData))) return null;
+  if (!samePath(closeNormalised(expected), closeNormalised(parsePath(actualData)))) return null;
 
   return {
     prst,
@@ -119,6 +119,35 @@ function byCorners(
 }
 
 type Point = ReturnType<typeof parsePath>[number];
+
+/**
+ * 닫는 선을 없는 셈 친다.
+ *
+ * `M …L…L… Z` 처럼 마지막 점에서 시작점으로 곧장 닫는 경로를, Figma 는 되읽을 때 그 선을
+ * **명시해서** 돌려준다 (`…L 시작점 Z`). 우리 preset 중에는 처음부터 그렇게 그리는 것도
+ * 있어서(잘린 모서리 계열), 그냥 견주면 같은 도형인데 점 개수가 하나 어긋난다 —
+ * 실측에서 육각형·삼각형 계열 200여 개가 통째로 떨어진 이유가 이것이다.
+ */
+function closeNormalised(points: Point[]): Point[] {
+  const out: Point[] = [];
+  let start: { x: number; y: number } | null = null;
+
+  for (const p of points) {
+    if ('close' in p) {
+      const last = out[out.length - 1];
+      if (start && last && !('close' in last) && !('c' in last)
+        && Math.abs(last.x - start.x) <= EPS && Math.abs(last.y - start.y) <= EPS) {
+        out.pop();
+      }
+      out.push(p);
+      start = null;
+      continue;
+    }
+    if (start === null || ('moveTo' in p && p.moveTo)) start = { x: p.x, y: p.y };
+    out.push(p);
+  }
+  return out;
+}
 
 /** 두 경로가 같은가 — 명령 순서와 좌표를 그대로 견준다. */
 function samePath(a: Point[], b: Point[]): boolean {

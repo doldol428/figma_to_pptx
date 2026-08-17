@@ -816,6 +816,8 @@ async function main(): Promise<void> {
    * 되돌리기 판단 자체 — 적어 둔 이름을 믿는 게 아니라 지금 경로와 대조해야 한다.
    * 경로를 고쳤는데도 되돌리면 그 편집이 통째로 날아간다.
    */
+  const parsePathStart = (d: string): string =>
+    /^M\s*(-?[\d.]+)[ ,]+(-?[\d.]+)/.exec(d)!.slice(1).join(' ');
   const HEX = { prst: 'hexagon', adj: {}, w: 100, h: 40 };
   const drawn = presetPath('hexagon', 100, 40, {})!;
   const bounds = pathBounds(drawn.data);
@@ -846,6 +848,14 @@ async function main(): Promise<void> {
    */
   checkTruthy('노드가 선 굵기만큼 커도 되돌린다',
     restorePreset(fakeNode(atOrigin, bounds.w + 2, bounds.h + 2))?.prst === 'hexagon');
+  /*
+   * Figma 는 닫힌 경로를 되읽을 때 시작점으로 돌아가는 선을 명시해서 돌려준다.
+   * 그 한 점 때문에 육각형·삼각형 계열 200여 개가 통째로 떨어졌다.
+   */
+  checkTruthy('닫는 선을 명시해도 되돌린다',
+    restorePreset(fakeNode(
+      atOrigin.replace(/Z\s*$/, `L${parsePathStart(atOrigin)} Z`), bounds.w, bounds.h,
+    ))?.prst === 'hexagon');
   // 경로가 상자 일부만 덮는 도형은 이름 상자가 되살아나야 한다 (호가 대표적)
   checkTruthy('호는 이름 상자를 되찾는다', (() => {
     const a = presetPath('arc', 100, 100, {})!;

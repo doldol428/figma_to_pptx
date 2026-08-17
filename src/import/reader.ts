@@ -701,9 +701,10 @@ async function readConnector(el: XNode, parent: Mat, ctx: Ctx): Promise<ImportNo
   const stroke = readStroke(one(spPr, 'ln'), ctx, one(el, 'style'));
   if (!stroke) return null;
 
+  // 꺾인 연결선도 이름으로 되돌릴 수 있다 — 이름을 안 적으면 custGeom 으로 굳는다.
   const conn = connectorPath(prst, place.w, place.h);
   const geometry: ShapeGeometry = conn
-    ? { kind: 'path', data: conn.data, evenOdd: false }
+    ? { kind: 'path', data: conn.data, evenOdd: false, preset: { prst, adj: {}, w: place.w, h: place.h } }
     : { kind: 'line' };
 
   // 연결선도 그림자를 진다. 도형 쪽만 읽으면 조용히 사라진다 (실측: 슬라이드 5 한 장에 20개).
