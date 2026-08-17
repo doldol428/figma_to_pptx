@@ -648,7 +648,19 @@ function createImage(spec: ImageNodeSpec): SceneNode[] {
     try {
       const svg = figma.createNodeFromSvg(decodeUtf8(figma.base64Decode(spec.data)));
       svg.name = spec.name;
-      svg.resizeWithoutConstraints(Math.max(0.01, spec.place.w), Math.max(0.01, spec.place.h));
+      /*
+       * 프레임만 줄이면 안 된다. `createNodeFromSvg` 는 viewBox 크기로 프레임을 만들고
+       * 자식들의 제약은 MIN 이라, 프레임만 줄이면 그림은 원래 크기 그대로 남아 넘친다 —
+       * 인천공항 로고가 viewBox 310.74 를 112.7 자리에 놓아 2.76배로 보였다.
+       * 제약을 SCALE 로 바꾸고 `resize` 를 써야 (`resizeWithoutConstraints` 가 아니라)
+       * 자식까지 같이 줄어든다.
+       */
+      for (const child of svg.children) {
+        if ('constraints' in child) {
+          child.constraints = { horizontal: 'SCALE', vertical: 'SCALE' };
+        }
+      }
+      svg.resize(Math.max(0.01, spec.place.w), Math.max(0.01, spec.place.h));
       applyPlacement(svg, spec.place);
       return [svg];
     } catch {
